@@ -343,10 +343,60 @@ export class GenerationPipeline {
       }
     }
 
+    // Check for invalid numeric values (NaN, Infinity)
+    for (const component of document.components) {
+      for (const [key, value] of Object.entries(component.attributes)) {
+        if (typeof value === "number" && !this.isValidNumber(value)) {
+          issues.push(`Component ${component.id} has invalid ${key}: ${value}`);
+        }
+      }
+    }
+
+    // Check stroke width requirements
+    for (const component of document.components) {
+      const strokeWidth = component.attributes["stroke-width"];
+      if (
+        typeof strokeWidth === "number" &&
+        component.attributes.stroke &&
+        strokeWidth < 1
+      ) {
+        issues.push(
+          `Component ${component.id} has stroke-width ${strokeWidth} below minimum of 1`
+        );
+      }
+    }
+
+    // Check decimal precision (max 2 decimal places)
+    for (const component of document.components) {
+      for (const [key, value] of Object.entries(component.attributes)) {
+        if (
+          typeof value === "number" &&
+          !Number.isInteger(value) &&
+          this.isValidNumber(value)
+        ) {
+          const decimals = value.toString().split(".")[1]?.length || 0;
+          if (decimals > 2) {
+            issues.push(
+              `Component ${component.id} has ${key} with >2 decimal places: ${value}`
+            );
+          }
+        }
+      }
+    }
+
+    // Check bounds validity
+    if (!document.bounds.width || !document.bounds.height) {
+      issues.push("Document has invalid bounds");
+    }
+
     return {
       isValid: issues.length === 0,
       issues,
     };
+  }
+
+  private isValidNumber(value: number): boolean {
+    return typeof value === "number" && isFinite(value) && !isNaN(value);
   }
 
   private repairDocument(
@@ -357,8 +407,9 @@ export class GenerationPipeline {
 
     for (const issue of issues) {
       if (issue.includes("Too many components")) {
-        // Remove excess components
-        const maxElements = parseInt(issue.match(/\d+/)?.[0] || "10");
+        // Remove excess components (keep the first ones as they're likely most important)
+        const maxMatch = issue.match(/> (\d+)/);
+        const maxElements = maxMatch ? parseInt(maxMatch[1]) : 10;
         repairedDocument.components = repairedDocument.components.slice(
           0,
           maxElements
@@ -377,9 +428,195 @@ export class GenerationPipeline {
           })
         );
       }
+
+      if (issue.includes("invalid") && issue.includes("NaN")) {
+        // Fix invalid numeric values
+        repairedDocument.components = repairedDocument.components.map(
+          (component) => {
+            const fixedAttributes = { ...component.attributes };
+            for (const [key, value] of Object.entries(fixedAttributes)) {
+              if (typeof value === "number" && !this.isValidNumber(value)) {
+                // Replace with sensible defaults based on attribute type
+                if (key.includes("x") || key.includes("y")) {
+                  fixedAttributes[key] = 0; // Position defaults to 0
+                } else if (key.includes("width") || key.includes("height")) {
+                  fixedAttributes[key] = 10; // Size defaults to 10
+                } else if (key.includes("r")) {
+                  fixedAttributes[key] = 5; // Radius defaults to 5
+                } else {
+                  fixedAttributes[key] = 1; // Other numeric values default to 1
+                }
+              }
+            }
+            return { ...component, attributes: fixedAttributes };
+          }
+        );
+      }
+
+      if (issue.includes("stroke-width") && issue.includes("below minimum")) {
+        // Fix stroke width below minimum
+        repairedDocument.components = repairedDocument.components.map(
+          (component) => {
+            if (
+              typeof component.attributes["stroke-width"] === "number" &&
+              component.attributes["stroke-width"] < 1
+            ) {
+              return {
+                ...component,
+                attributes: {
+                  ...component.attributes,
+                  "stroke-width": 1,
+                },
+              };
+            }
+            return component;
+          }
+        );
+      }
+
+      if (issue.includes("decimal places")) {
+        // Fix excessive decimal precision
+        repairedDocument.components = repairedDocument.components.map(
+          (component) => {
+            const fixedAttributes = { ...component.attributes };
+            for (const [key, value] of Object.entries(fixedAttributes)) {
+              if (
+                typeof value === "number" &&
+                !Number.isInteger(value) &&
+                this.isValidNumber(value)
+              ) {
+                fixedAttributes[key] = Math.round(value * 100) / 100; // Round to 2 decimal places
+              }
+            }
+            return { ...component, attributes: fixedAttributes };
+          }
+        );
+      }
+
+      if (issue.includes("invalid bounds")) {
+        // Fix invalid document bounds
+        if (
+          !repairedDocument.bounds.width ||
+          repairedDocument.bounds.width <= 0
+        ) {
+          repairedDocument.bounds.width = 400; // Default width
+        }
+        if (
+          !repairedDocument.bounds.height ||
+          repairedDocument.bounds.height <= 0
+        ) {
+          repairedDocument.bounds.height = 400; // Default height
+        }
+      }
+
+      if (issue.includes("Missing required motif")) {
+        // Add missing motifs by creating simple components
+        const motifMatch = issue.match(/Missing required motif: (.+)/);
+        if (motifMatch) {
+          const missingMotif = motifMatch[1];
+          const newComponent = this.createSimpleMotifComponent(
+            missingMotif,
+            repairedDocument.bounds
+          );
+          repairedDocument.components.push(newComponent);
+        }
+      }
     }
 
     return repairedDocument;
+  }
+
+  private createSimpleMotifComponent(
+    motif: string,
+    bounds: { width: number; height: number }
+  ): any {
+    const centerX = bounds.width / 2;
+    const centerY = bounds.height / 2;
+    const size = Math.min(bounds.width, bounds.height) / 8;
+
+    // Create a simple component based on motif type
+    switch (motif.toLowerCase()) {
+      case "circle":
+      case "sun":
+      case "moon":
+        return {
+          id: `repair-${motif}-${Date.now()}`,
+          type: motif,
+          element: "circle",
+          attributes: {
+            cx: centerX,
+            cy: centerY,
+            r: size,
+            fill: "none",
+            stroke: "#333",
+            "stroke-width": 1,
+          },
+          metadata: {
+            motif,
+            generated: true,
+            reused: false,
+            repaired: true,
+          },
+        };
+
+      case "star":
+        return {
+          id: `repair-${motif}-${Date.now()}`,
+          type: motif,
+          element: "polygon",
+          attributes: {
+            points: this.generateStarPoints(centerX, centerY, size),
+            fill: "none",
+            stroke: "#333",
+            "stroke-width": 1,
+          },
+          metadata: {
+            motif,
+            generated: true,
+            reused: false,
+            repaired: true,
+          },
+        };
+
+      default:
+        // Default to a simple rectangle
+        return {
+          id: `repair-${motif}-${Date.now()}`,
+          type: motif,
+          element: "rect",
+          attributes: {
+            x: centerX - size,
+            y: centerY - size,
+            width: size * 2,
+            height: size * 2,
+            fill: "none",
+            stroke: "#333",
+            "stroke-width": 1,
+          },
+          metadata: {
+            motif,
+            generated: true,
+            reused: false,
+            repaired: true,
+          },
+        };
+    }
+  }
+
+  private generateStarPoints(
+    centerX: number,
+    centerY: number,
+    size: number
+  ): string {
+    const points = [];
+    for (let i = 0; i < 10; i++) {
+      const angle = (i * Math.PI) / 5;
+      const radius = i % 2 === 0 ? size : size / 2;
+      const x = centerX + Math.cos(angle - Math.PI / 2) * radius;
+      const y = centerY + Math.sin(angle - Math.PI / 2) * radius;
+      points.push(`${x.toFixed(2)},${y.toFixed(2)}`);
+    }
+    return points.join(" ");
   }
 
   private async fallbackGeneration(

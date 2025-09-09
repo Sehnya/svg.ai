@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: svg-ai-service
+  namespace: svg-ai
+  labels:
+    app: svg-ai
+    component: backend
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3001
+    targetPort: 3001
+    protocol: TCP
+    name: http
+  selector:
+    app: svg-ai
+    component: backend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: svg-ai-nginx-service
+  namespace: svg-ai
+  labels:
+    app: svg-ai
+    component: frontend
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  selector:
+    app: svg-ai
+    component: frontend

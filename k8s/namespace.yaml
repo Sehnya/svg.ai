@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: svg-ai
+  labels:
+    name: svg-ai
+    environment: production

@@ -44,13 +44,14 @@ export class SVGSynthesizer {
       palette: this.extractPalette(plan, grounding),
     };
 
-    // Validate document structure (temporarily disabled due to schema issues)
-    // const validationResult = AISVGDocumentSchema.safeParse(document);
-    // if (!validationResult.success) {
-    //   throw new Error(
-    //     `Invalid SVG document: ${validationResult.error.message}`
-    //   );
-    // }
+    // Validate document structure with schema
+    const validationResult = AISVGDocumentSchema.safeParse(document);
+    if (!validationResult.success) {
+      console.warn(
+        `SVG document validation warning: ${validationResult.error.message}`
+      );
+      // Continue with generation but log the validation issue
+    }
 
     return document;
   }
@@ -125,6 +126,9 @@ export class SVGSynthesizer {
   ): SVGComponent {
     const { position, size, style, rotation } = componentPlan;
 
+    // Validate input coordinates and dimensions
+    this.validateCoordinates(position, size);
+
     // Clone and adapt the component
     const adapted: SVGComponent = {
       ...baseComponent,
@@ -139,16 +143,20 @@ export class SVGSynthesizer {
     // Apply transformations based on element type
     switch (adapted.element) {
       case "circle":
-        adapted.attributes.cx = position.x;
-        adapted.attributes.cy = position.y;
-        adapted.attributes.r = Math.min(size.width, size.height) / 2;
+        adapted.attributes.cx = this.sanitizeNumber(position.x);
+        adapted.attributes.cy = this.sanitizeNumber(position.y);
+        adapted.attributes.r = this.sanitizeNumber(
+          Math.min(size.width, size.height) / 2
+        );
         break;
 
       case "rect":
-        adapted.attributes.x = position.x - size.width / 2;
-        adapted.attributes.y = position.y - size.height / 2;
-        adapted.attributes.width = size.width;
-        adapted.attributes.height = size.height;
+        adapted.attributes.x = this.sanitizeNumber(position.x - size.width / 2);
+        adapted.attributes.y = this.sanitizeNumber(
+          position.y - size.height / 2
+        );
+        adapted.attributes.width = this.sanitizeNumber(size.width);
+        adapted.attributes.height = this.sanitizeNumber(size.height);
         break;
 
       case "polygon":
@@ -227,21 +235,26 @@ export class SVGSynthesizer {
   ): SVGComponent {
     const { id, type, position, size, style, motif } = componentPlan;
 
+    // Validate input coordinates and dimensions
+    this.validateCoordinates(position, size);
+
     const attributes: Record<string, string | number> = {};
 
     // Generate attributes based on element type
     switch (type) {
       case "circle":
-        attributes.cx = position.x;
-        attributes.cy = position.y;
-        attributes.r = Math.min(size.width, size.height) / 2;
+        attributes.cx = this.sanitizeNumber(position.x);
+        attributes.cy = this.sanitizeNumber(position.y);
+        attributes.r = this.sanitizeNumber(
+          Math.min(size.width, size.height) / 2
+        );
         break;
 
       case "rect":
-        attributes.x = position.x - size.width / 2;
-        attributes.y = position.y - size.height / 2;
-        attributes.width = size.width;
-        attributes.height = size.height;
+        attributes.x = this.sanitizeNumber(position.x - size.width / 2);
+        attributes.y = this.sanitizeNumber(position.y - size.height / 2);
+        attributes.width = this.sanitizeNumber(size.width);
+        attributes.height = this.sanitizeNumber(size.height);
         break;
 
       case "polygon":
@@ -260,24 +273,26 @@ export class SVGSynthesizer {
         break;
 
       case "line":
-        attributes.x1 = position.x - size.width / 2;
-        attributes.y1 = position.y;
-        attributes.x2 = position.x + size.width / 2;
-        attributes.y2 = position.y;
+        attributes.x1 = this.sanitizeNumber(position.x - size.width / 2);
+        attributes.y1 = this.sanitizeNumber(position.y);
+        attributes.x2 = this.sanitizeNumber(position.x + size.width / 2);
+        attributes.y2 = this.sanitizeNumber(position.y);
         break;
 
       case "ellipse":
-        attributes.cx = position.x;
-        attributes.cy = position.y;
-        attributes.rx = size.width / 2;
-        attributes.ry = size.height / 2;
+        attributes.cx = this.sanitizeNumber(position.x);
+        attributes.cy = this.sanitizeNumber(position.y);
+        attributes.rx = this.sanitizeNumber(size.width / 2);
+        attributes.ry = this.sanitizeNumber(size.height / 2);
         break;
 
       default:
         // Default to circle
-        attributes.cx = position.x;
-        attributes.cy = position.y;
-        attributes.r = Math.min(size.width, size.height) / 2;
+        attributes.cx = this.sanitizeNumber(position.x);
+        attributes.cy = this.sanitizeNumber(position.y);
+        attributes.r = this.sanitizeNumber(
+          Math.min(size.width, size.height) / 2
+        );
     }
 
     const component: SVGComponent = {
@@ -464,5 +479,50 @@ export class SVGSynthesizer {
     }
 
     return usedObjects;
+  }
+
+  /**
+   * Validates that coordinates and dimensions are valid numbers
+   */
+  private validateCoordinates(
+    position: { x: number; y: number },
+    size: { width: number; height: number }
+  ): void {
+    if (!this.isValidNumber(position.x) || !this.isValidNumber(position.y)) {
+      throw new Error(
+        `Invalid position coordinates: x=${position.x}, y=${position.y}`
+      );
+    }
+
+    if (!this.isValidNumber(size.width) || !this.isValidNumber(size.height)) {
+      throw new Error(
+        `Invalid size dimensions: width=${size.width}, height=${size.height}`
+      );
+    }
+
+    if (size.width <= 0 || size.height <= 0) {
+      throw new Error(
+        `Size dimensions must be positive: width=${size.width}, height=${size.height}`
+      );
+    }
+  }
+
+  /**
+   * Checks if a number is valid (not NaN, not Infinity)
+   */
+  private isValidNumber(value: number): boolean {
+    return typeof value === "number" && isFinite(value) && !isNaN(value);
+  }
+
+  /**
+   * Sanitizes a number by ensuring it's valid and rounding to 2 decimal places
+   */
+  private sanitizeNumber(value: number): number {
+    if (!this.isValidNumber(value)) {
+      throw new Error(`Invalid number value: ${value}`);
+    }
+
+    // Round to 2 decimal places to prevent excessive precision
+    return Math.round(value * 100) / 100;
   }
 }

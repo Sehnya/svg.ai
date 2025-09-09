@@ -11,6 +11,89 @@ export interface NumberSanitizationResult {
 }
 
 export class InputSanitizer {
+  // Sanitize general input
+  static sanitizeInput(input: any): SanitizationResult {
+    if (input === null || input === undefined) {
+      return {
+        sanitized: "",
+        wasModified: false,
+        warnings: [],
+      };
+    }
+
+    const original = String(input);
+    let sanitized = original;
+    const warnings: string[] = [];
+
+    // Remove potentially dangerous patterns
+    const dangerousPatterns = [
+      {
+        pattern: /<script[^>]*>.*?<\/script>/gi,
+        replacement: "",
+        warning: "Potentially unsafe content was removed from your input",
+      },
+      {
+        pattern: /javascript:/gi,
+        replacement: "",
+        warning: "Potentially unsafe content was removed from your input",
+      },
+      {
+        pattern: /vbscript:/gi,
+        replacement: "",
+        warning: "Potentially unsafe content was removed from your input",
+      },
+      {
+        pattern: /on\w+\s*=/gi,
+        replacement: "",
+        warning: "Potentially unsafe content was removed from your input",
+      },
+      {
+        pattern: /<iframe[^>]*>.*?<\/iframe>/gi,
+        replacement: "",
+        warning: "Potentially unsafe content was removed from your input",
+      },
+      {
+        pattern: /<object[^>]*>.*?<\/object>/gi,
+        replacement: "",
+        warning: "Potentially unsafe content was removed from your input",
+      },
+      {
+        pattern: /<embed[^>]*>/gi,
+        replacement: "",
+        warning: "Potentially unsafe content was removed from your input",
+      },
+    ];
+
+    for (const { pattern, replacement, warning } of dangerousPatterns) {
+      if (pattern.test(sanitized)) {
+        sanitized = sanitized.replace(pattern, replacement);
+        if (!warnings.includes(warning)) {
+          warnings.push(warning);
+        }
+      }
+    }
+
+    // Encode HTML entities
+    sanitized = sanitized
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#x27;");
+
+    // Trim excessive whitespace
+    const trimmed = sanitized.replace(/\s+/g, " ").trim();
+    if (trimmed !== sanitized) {
+      sanitized = trimmed;
+    }
+
+    return {
+      sanitized,
+      wasModified: sanitized !== original,
+      warnings,
+    };
+  }
+
   // Sanitize text prompts
   static sanitizePrompt(input: string): SanitizationResult {
     const original = input;
@@ -69,7 +152,18 @@ export class InputSanitizer {
     // Limit length
     if (sanitized.length > 500) {
       sanitized = sanitized.substring(0, 500);
-      warnings.push("Input truncated to 500 characters");
+      warnings.push("Prompt was truncated to 500 characters");
+    }
+
+    // Check for excessive special characters
+    const specialCharCount = (
+      sanitized.match(/[!@#$%^&*()_+{}|:"<>?[\]\\;',.\/]/g) || []
+    ).length;
+    const totalLength = sanitized.length;
+    if (totalLength > 0 && specialCharCount / totalLength > 0.3) {
+      warnings.push(
+        "Your prompt contains many special characters which may affect generation quality"
+      );
     }
 
     return {
@@ -81,48 +175,159 @@ export class InputSanitizer {
 
   // Sanitize numeric inputs
   static sanitizeNumber(
-    input: number,
+    input: any,
     min: number,
     max: number,
     defaultValue: number
   ): NumberSanitizationResult {
     const original = input;
-    let value = input;
+    let value = typeof input === "string" ? parseFloat(input) : Number(input);
     const warnings: string[] = [];
+    let wasModified = false;
 
     // Handle NaN or invalid numbers
     if (isNaN(value) || !isFinite(value)) {
       value = defaultValue;
-      warnings.push(
-        `Invalid number replaced with default value ${defaultValue}`
-      );
+      warnings.push("Invalid number, using default value");
+      wasModified = true;
+    } else {
+      // Clamp to range
+      if (value < min) {
+        value = min;
+        warnings.push(`Value was below minimum (${min}), adjusted to minimum`);
+        wasModified = true;
+      } else if (value > max) {
+        value = max;
+        warnings.push(`Value was above maximum (${max}), adjusted to maximum`);
+        wasModified = true;
+      }
+
+      // Round to reasonable precision (2 decimal places)
+      const rounded = Math.round(value * 100) / 100;
+      if (rounded !== value) {
+        value = rounded;
+        wasModified = true;
+      }
     }
 
-    // Clamp to range
-    if (value < min) {
-      value = min;
-      warnings.push(`Value increased to minimum ${min}`);
-    } else if (value > max) {
-      value = max;
-      warnings.push(`Value decreased to maximum ${max}`);
-    }
-
-    // Round to integer for pixel values
-    const rounded = Math.round(value);
-    if (rounded !== value) {
-      value = rounded;
-      warnings.push("Value rounded to nearest integer");
+    // Only consider it modified if the final numeric value differs from the original numeric value
+    // For strings, compare the parsed value to the original parsed value
+    const originalNumeric =
+      typeof original === "string" ? parseFloat(original) : Number(original);
+    if (!isNaN(originalNumeric) && !wasModified) {
+      wasModified = value !== originalNumeric;
     }
 
     return {
       value,
-      wasModified: value !== original,
+      wasModified,
       warnings,
     };
   }
 
+  // Sanitize color inputs
+  static sanitizeColor(input: any): SanitizationResult {
+    if (input === null || input === undefined || typeof input !== "string") {
+      return {
+        sanitized: "#000000",
+        wasModified: true,
+        warnings: ["Invalid color format, using black"],
+      };
+    }
+
+    const original = input.trim();
+
+    // Check for dangerous content first
+    if (this.isSuspiciousInput(original)) {
+      return {
+        sanitized: "#000000",
+        wasModified: true,
+        warnings: ["Potentially unsafe content was removed from your input"],
+      };
+    }
+
+    // Valid hex color patterns
+    const hexPattern = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/;
+
+    // Valid named colors (basic set)
+    const validNamedColors = [
+      "red",
+      "green",
+      "blue",
+      "yellow",
+      "orange",
+      "purple",
+      "pink",
+      "brown",
+      "black",
+      "white",
+      "gray",
+      "grey",
+      "cyan",
+      "magenta",
+      "lime",
+      "navy",
+      "maroon",
+      "olive",
+      "teal",
+      "silver",
+      "aqua",
+      "fuchsia",
+    ];
+
+    if (hexPattern.test(original)) {
+      return {
+        sanitized: original,
+        wasModified: false,
+        warnings: [],
+      };
+    }
+
+    if (validNamedColors.includes(original.toLowerCase())) {
+      return {
+        sanitized: original,
+        wasModified: false,
+        warnings: [],
+      };
+    }
+
+    // Invalid hex color
+    if (original.startsWith("#")) {
+      return {
+        sanitized: "#000000",
+        wasModified: true,
+        warnings: ["Invalid hex color format, using black"],
+      };
+    }
+
+    // Invalid named color
+    return {
+      sanitized: "#000000",
+      wasModified: true,
+      warnings: ["Unsupported color name, using black"],
+    };
+  }
+
+  // Check if string contains only safe characters
+  static containsOnlySafeCharacters(input: string): boolean {
+    if (!input) return true;
+
+    // Allow alphanumeric, spaces, and common punctuation
+    const safePattern = /^[a-zA-Z0-9\s\-_.,!?@#$%&*()+=:;"'\/\\[\]{}|`~]*$/;
+
+    // Check for null bytes and other control characters
+    const hasControlChars = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(input);
+
+    return safePattern.test(input) && !hasControlChars;
+  }
+
   // Check for suspicious input patterns
-  static isSuspiciousInput(input: string): boolean {
+  static isSuspiciousInput(input: any): boolean {
+    if (input === null || input === undefined) {
+      return false;
+    }
+
+    const inputStr = String(input);
     const suspiciousPatterns = [
       /<script/i,
       /javascript:/i,
@@ -136,7 +341,7 @@ export class InputSanitizer {
       /prompt\s*\(/i,
     ];
 
-    return suspiciousPatterns.some((pattern) => pattern.test(input));
+    return suspiciousPatterns.some((pattern) => pattern.test(inputStr));
   }
 
   // Sanitize file names

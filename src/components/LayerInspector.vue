@@ -79,63 +79,44 @@
       </div>
 
       <!-- List View -->
-      <div v-else class="space-y-2">
-        <div
-          v-for="layer in layers"
-          :key="layer.id"
-          :class="[
-            'flex items-center space-x-3 p-3 rounded-lg border transition-colors cursor-pointer',
-            selectedLayer === layer.id
-              ? 'border-blue-200 bg-blue-50'
-              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50',
-          ]"
-          @click="selectLayer(layer.id)"
+      <div v-else>
+        <!-- Virtual Scrolling for Large Lists -->
+        <VirtualScrollList
+          v-if="layers.length > virtualScrollThreshold"
+          :items="layers"
+          :item-height="layerItemHeight"
+          :container-height="virtualScrollHeight"
+          key-field="id"
+          @visible-range-change="handleVisibleRangeChange"
         >
-          <!-- Layer Type Icon -->
-          <div class="flex-shrink-0">
-            <LayerIcon :type="layer.type" />
-          </div>
+          <template #default="{ item: layer, index }">
+            <LayerListItem
+              :layer="layer"
+              :index="index"
+              :selected="selectedLayer === layer.id"
+              :show-details="showDetails"
+              @select="selectLayer"
+              @copy-id="copyLayerId"
+              @toggle-visibility="toggleLayerVisibility"
+              @highlight="highlightLayer"
+            />
+          </template>
+        </VirtualScrollList>
 
-          <!-- Layer Info -->
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center justify-between">
-              <p class="text-sm font-medium text-gray-900 truncate">
-                {{ layer.label }}
-              </p>
-              <span class="text-xs text-gray-500 capitalize ml-2">{{
-                layer.type
-              }}</span>
-            </div>
-            <p
-              v-if="showDetails"
-              class="text-xs text-gray-500 font-mono truncate"
-            >
-              {{ layer.id }}
-            </p>
-          </div>
-
-          <!-- Actions -->
-          <div class="flex-shrink-0 flex items-center space-x-1">
-            <button
-              @click.stop="copyLayerId(layer.id)"
-              class="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-              title="Copy ID"
-            >
-              <svg
-                class="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                />
-              </svg>
-            </button>
-          </div>
+        <!-- Regular List for Small Lists -->
+        <div v-else class="space-y-2 max-h-96 overflow-y-auto">
+          <LayerListItem
+            v-for="(layer, index) in layers"
+            :key="layer.id"
+            :layer="layer"
+            :index="index"
+            :selected="selectedLayer === layer.id"
+            :show-details="showDetails"
+            @select="selectLayer"
+            @copy-id="copyLayerId"
+            @toggle-visibility="toggleLayerVisibility"
+            @highlight="highlightLayer"
+          />
         </div>
       </div>
     </div>
@@ -172,7 +153,9 @@ import { ref, computed } from "vue";
 import type { LayerInfo } from "../types/api";
 import { copyToClipboard } from "../utils/clipboard";
 import LayerTreeNode from "./LayerTreeNode.vue";
-import LayerIcon from "./LayerIcon.vue";
+
+import VirtualScrollList from "./VirtualScrollList.vue";
+import LayerListItem from "./LayerListItem.vue";
 
 interface Props {
   layers?: LayerInfo[];
@@ -185,6 +168,9 @@ interface Props {
 interface Emits {
   (e: "selectLayer", layerId: string): void;
   (e: "copyId", layerId: string): void;
+  (e: "toggleVisibility", layerId: string): void;
+  (e: "highlightLayer", layerId: string): void;
+  (e: "visibleRangeChange", startIndex: number, endIndex: number): void;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -202,6 +188,11 @@ const expandedLayers = ref<Set<string>>(new Set());
 const selectedLayer = ref<string | null>(null);
 const allExpanded = ref(props.defaultExpanded);
 const showCopyNotification = ref(false);
+
+// Virtual scrolling configuration
+const virtualScrollThreshold = 50; // Use virtual scrolling for lists with more than 50 items
+const layerItemHeight = 64; // Height of each layer item in pixels
+const virtualScrollHeight = 400; // Height of virtual scroll container
 
 // Computed properties
 const rootLayers = computed(() => {
@@ -281,5 +272,17 @@ const copyLayerId = async (layerId: string) => {
   } catch (error) {
     console.error("Failed to copy layer ID:", error);
   }
+};
+
+const toggleLayerVisibility = (layerId: string) => {
+  emit("toggleVisibility", layerId);
+};
+
+const highlightLayer = (layerId: string) => {
+  emit("highlightLayer", layerId);
+};
+
+const handleVisibleRangeChange = (startIndex: number, endIndex: number) => {
+  emit("visibleRangeChange", startIndex, endIndex);
 };
 </script>

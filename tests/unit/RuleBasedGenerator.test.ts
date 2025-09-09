@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach } from "vitest";
 import { RuleBasedGenerator } from "../../server/services/RuleBasedGenerator";
 import type { GenerationRequest } from "../../server/types";
 

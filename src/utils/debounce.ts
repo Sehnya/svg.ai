@@ -53,7 +53,11 @@ export function advancedDebounce<T extends (...args: any[]) => any>(
     trailing?: boolean;
     maxWait?: number;
   } = {}
-): (...args: Parameters<T>) => void {
+): ((...args: Parameters<T>) => void) & {
+  cancel: () => void;
+  flush: () => void;
+  pending: () => boolean;
+} {
   let lastCallTime: number | undefined;
   let lastInvokeTime = 0;
   let timerId: ReturnType<typeof setTimeout> | undefined;

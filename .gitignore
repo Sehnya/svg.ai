@@ -17,3 +17,7 @@ coverage
 node_modules
 
 # Note: Keep .env.example and .env.*.example files for templates
+encore.gen.go
+encore.gen.cue
+/.encore
+/encore.gen

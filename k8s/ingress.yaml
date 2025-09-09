@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: svg-ai-ingress
+  namespace: svg-ai
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+spec:
+  tls:
+  - hosts:
+    - svg-ai.yourdomain.com
+    secretName: svg-ai-tls
+  rules:
+  - host: svg-ai.yourdomain.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: svg-ai-service
+            port:
+              number: 3001
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: svg-ai-nginx-service
+            port:
+              number: 80

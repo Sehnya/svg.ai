@@ -13,6 +13,33 @@
             <div class="text-sm text-gray-500">
               AI-powered SVG generation with live preview
             </div>
+
+            <!-- Analytics Toggle -->
+            <button
+              @click="showAnalytics = !showAnalytics"
+              :class="[
+                'px-3 py-1 text-xs font-medium rounded-md transition-colors',
+                showAnalytics
+                  ? 'bg-blue-100 text-blue-800'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
+              ]"
+            >
+              <svg
+                class="w-4 h-4 inline mr-1"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                />
+              </svg>
+              Analytics
+            </button>
+
             <div class="flex items-center space-x-2">
               <div
                 :class="[
@@ -59,57 +86,16 @@
         </div>
       </div>
 
-      <!-- Error Messages -->
-      <div v-if="error || globalError" class="mb-6">
-        <div class="bg-red-50 border border-red-200 rounded-md p-4">
-          <div class="flex">
-            <div class="flex-shrink-0">
-              <svg
-                class="h-5 w-5 text-red-400"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fill-rule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-            </div>
-            <div class="ml-3">
-              <h3 class="text-sm font-medium text-red-800">
-                {{ error ? "Generation Error" : "Application Error" }}
-              </h3>
-              <div class="mt-2 text-sm text-red-700">
-                {{ error || globalError }}
-              </div>
-              <div class="mt-4 space-x-2">
-                <button
-                  v-if="error"
-                  @click="clearError"
-                  class="bg-red-100 px-2 py-1 text-xs font-medium text-red-800 rounded hover:bg-red-200"
-                >
-                  Dismiss
-                </button>
-                <button
-                  v-if="globalError"
-                  @click="clearGlobalError"
-                  class="bg-red-100 px-2 py-1 text-xs font-medium text-red-800 rounded hover:bg-red-200"
-                >
-                  Dismiss
-                </button>
-                <button
-                  v-if="canRetry"
-                  @click="retryGeneration"
-                  class="bg-red-100 px-2 py-1 text-xs font-medium text-red-800 rounded hover:bg-red-200"
-                >
-                  Retry
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <!-- Enhanced Error Display -->
+      <ErrorDisplay
+        v-if="errorItems.length > 0"
+        :errors="errorItems"
+        :allow-retry="canRetry"
+        class="mb-6"
+        @retry="retryGeneration"
+        @dismiss-all="clearAllErrors"
+        @action="handleErrorAction"
+      />
 
       <!-- Application Layout -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -127,17 +113,19 @@
                 >
                   Describe your SVG
                 </label>
-                <textarea
-                  id="prompt"
+                <DebouncedInput
                   v-model="generationParams.prompt"
-                  rows="3"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  type="textarea"
+                  :rows="3"
                   placeholder="e.g., A blue circle with a red border, or a simple house icon"
-                  :maxlength="500"
+                  :max-length="500"
+                  :debounce-ms="300"
+                  :show-character-count="true"
+                  :show-suggestions="true"
+                  :suggestions="promptSuggestions"
+                  @debounced-input="handlePromptChange"
+                  @suggestion-select="handleSuggestionSelect"
                 />
-                <div class="mt-1 text-xs text-gray-500">
-                  {{ generationParams.prompt.length }}/500 characters
-                </div>
               </div>
 
               <!-- Size Controls -->
@@ -242,6 +230,25 @@
             @download="handleDownload"
           />
 
+          <!-- Enhanced Export Options -->
+          <ExportOptions
+            v-if="generationResult?.svg"
+            :svg-content="generationResult.svg"
+            :original-size="
+              generationResult.meta
+                ? {
+                    width: generationResult.meta.width,
+                    height: generationResult.meta.height,
+                  }
+                : undefined
+            "
+            title="Export Options"
+            :show-advanced-options="true"
+            @export="handleExport"
+            @copy="handleExportCopy"
+            @error="handleExportError"
+          />
+
           <!-- Code Output -->
           <CodeOutput
             v-if="generationResult?.svg"
@@ -286,6 +293,14 @@
             v-if="generationResult?.eventId"
             :event-id="generationResult.eventId"
             :user-id="undefined"
+          />
+
+          <!-- Analytics Dashboard -->
+          <AnalyticsDashboard
+            v-if="showAnalytics"
+            :show-learning-insights="true"
+            @reuse-prompt="handleReusePrompt"
+            @error="handleAnalyticsError"
           />
 
           <!-- Warnings Display -->
@@ -379,6 +394,10 @@ import CodeOutput from "./components/CodeOutput.vue";
 import MetadataDisplay from "./components/MetadataDisplay.vue";
 import LayerInspector from "./components/LayerInspector.vue";
 import FeedbackControls from "./components/FeedbackControls.vue";
+import AnalyticsDashboard from "./components/AnalyticsDashboard.vue";
+import ExportOptions from "./components/ExportOptions.vue";
+import DebouncedInput from "./components/DebouncedInput.vue";
+import ErrorDisplay from "./components/ErrorDisplay.vue";
 
 // Use generation composable
 const {
@@ -401,6 +420,21 @@ const { submitImplicitFeedback } = useFeedback();
 const globalError = ref<string | null>(null);
 const selectedLayer = ref<string | null>(null);
 const currentFormat = ref<string>("svg");
+const showAnalytics = ref(false);
+
+// Enhanced UI state
+const promptSuggestions = ref([
+  "blue circle with red border",
+  "simple house icon",
+  "geometric pattern",
+  "minimalist logo",
+  "abstract shapes",
+  "nature illustration",
+  "tech icon design",
+  "decorative border",
+]);
+
+const errorItems = ref<any[]>([]);
 
 // Computed properties
 const svgStatistics = computed(() => {
@@ -503,6 +537,48 @@ const handleLayerIdCopy = (layerId: string) => {
 
 const clearGlobalError = () => {
   globalError.value = null;
+};
+
+// Enhanced UI methods
+const handlePromptChange = (value: string) => {
+  // Handle debounced prompt changes
+  console.log("Prompt changed:", value);
+};
+
+const handleSuggestionSelect = (suggestion: any) => {
+  const text = typeof suggestion === "string" ? suggestion : suggestion.text;
+  generationParams.prompt = text;
+};
+
+const handleExport = (options: any) => {
+  console.log("Export options:", options);
+  // Handle export with specific options
+};
+
+const handleExportCopy = (_content: string) => {
+  errorHandler.showSuccess("Copied!", "Export content copied to clipboard");
+};
+
+const handleExportError = (error: string) => {
+  errorHandler.showError("Export Error", error);
+};
+
+const handleReusePrompt = (prompt: string) => {
+  generationParams.prompt = prompt;
+};
+
+const handleAnalyticsError = (error: string) => {
+  errorHandler.showError("Analytics Error", error);
+};
+
+const clearAllErrors = () => {
+  errorItems.value = [];
+  clearError();
+  clearGlobalError();
+};
+
+const handleErrorAction = (error: any) => {
+  console.log("Error action:", error);
 };
 
 // Global error handler

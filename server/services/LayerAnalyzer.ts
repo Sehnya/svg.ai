@@ -83,17 +83,22 @@ export class LayerAnalyzer {
     const tagName = element.tagName.toLowerCase();
     const id = element.getAttribute("id");
 
-    // If element has an ID, use formatted ID as label (except for groups which have special logic)
-    if (id && tagName !== "g") {
-      return this.formatIdAsLabel(id);
-    }
-
-    // For groups, check for ID first, then use group-specific logic
+    // For groups, always use group-specific logic unless ID suggests otherwise
     if (tagName === "g") {
       if (id) {
-        return this.formatIdAsLabel(id);
+        // Check if ID suggests it should be treated as a group count
+        const formattedId = this.formatIdAsLabel(id);
+        if (formattedId.toLowerCase().includes("group")) {
+          return this.generateGroupLabel(element);
+        }
+        return formattedId;
       }
       return this.generateGroupLabel(element);
+    }
+
+    // If element has an ID, use formatted ID as label
+    if (id) {
+      return this.formatIdAsLabel(id);
     }
 
     // For elements without IDs, use descriptive labels based on attributes
@@ -209,28 +214,34 @@ export class LayerAnalyzer {
     const fill = element.getAttribute("fill");
     const stroke = element.getAttribute("stroke");
 
-    let label = "Polygon";
-
-    if (fill && fill !== "none") {
-      const colorName = this.getColorName(fill);
-      label = `${colorName} Polygon`;
-    } else if (stroke && stroke !== "none") {
-      const colorName = this.getColorName(stroke);
-      label = `${colorName} Polygon Outline`;
-    }
+    let shapeType = "Polygon";
 
     // Count points to determine polygon type
     if (points) {
-      const pointCount = points.trim().split(/\s+/).length / 2;
+      const pointPairs = points
+        .trim()
+        .split(/\s+|,/)
+        .filter((p) => p.trim() !== "");
+      const pointCount = Math.floor(pointPairs.length / 2);
       if (pointCount === 3) {
-        label = label.replace("Polygon", "Triangle");
+        shapeType = "Triangle";
       } else if (pointCount === 4) {
-        label = label.replace("Polygon", "Quadrilateral");
+        shapeType = "Quadrilateral";
       } else if (pointCount === 5) {
-        label = label.replace("Polygon", "Pentagon");
+        shapeType = "Pentagon";
       } else if (pointCount === 6) {
-        label = label.replace("Polygon", "Hexagon");
+        shapeType = "Hexagon";
       }
+    }
+
+    let label = shapeType;
+
+    if (fill && fill !== "none") {
+      const colorName = this.getColorName(fill);
+      label = `${colorName} ${shapeType}`;
+    } else if (stroke && stroke !== "none") {
+      const colorName = this.getColorName(stroke);
+      label = `${colorName} ${shapeType} Outline`;
     }
 
     return label;
@@ -263,23 +274,35 @@ export class LayerAnalyzer {
     }
 
     // For hex colors, try to determine basic color
-    if (color.startsWith("#") && color.length === 7) {
-      const r = parseInt(color.substring(1, 3), 16);
-      const g = parseInt(color.substring(3, 5), 16);
-      const b = parseInt(color.substring(5, 7), 16);
+    if (color.startsWith("#") && (color.length === 7 || color.length === 4)) {
+      let r, g, b;
 
-      // Determine dominant color
-      if (r > g && r > b) {
+      if (color.length === 4) {
+        // Short hex format #RGB
+        r = parseInt(color.substring(1, 2) + color.substring(1, 2), 16);
+        g = parseInt(color.substring(2, 3) + color.substring(2, 3), 16);
+        b = parseInt(color.substring(3, 4) + color.substring(3, 4), 16);
+      } else {
+        // Full hex format #RRGGBB
+        r = parseInt(color.substring(1, 3), 16);
+        g = parseInt(color.substring(3, 5), 16);
+        b = parseInt(color.substring(5, 7), 16);
+      }
+
+      // Determine dominant color - require significant dominance
+      const threshold = 50; // Minimum difference to be considered dominant
+
+      if (r > g + threshold && r > b + threshold) {
         return "Red";
-      } else if (g > r && g > b) {
+      } else if (g > r + threshold && g > b + threshold) {
         return "Green";
-      } else if (b > r && b > g) {
+      } else if (b > r + threshold && b > g + threshold) {
         return "Blue";
-      } else if (r === g && r > b) {
+      } else if (Math.abs(r - g) < threshold && r > b + threshold) {
         return "Yellow";
-      } else if (r === b && r > g) {
+      } else if (Math.abs(r - b) < threshold && r > g + threshold) {
         return "Magenta";
-      } else if (g === b && g > r) {
+      } else if (Math.abs(g - b) < threshold && g > r + threshold) {
         return "Cyan";
       }
     }
@@ -327,9 +350,13 @@ export class LayerAnalyzer {
 
       // Determine complexity
       let complexity: "simple" | "moderate" | "complex" = "simple";
-      if (elementCount > 20 || colorCount > 5 || hasGroups) {
+      if (
+        elementCount > 20 ||
+        colorCount > 5 ||
+        (hasGroups && elementCount <= 2)
+      ) {
         complexity = "complex";
-      } else if (elementCount > 5 || colorCount > 2) {
+      } else if (elementCount > 5 || colorCount > 2 || hasGroups || hasText) {
         complexity = "moderate";
       }
 

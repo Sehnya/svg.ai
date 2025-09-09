@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: svg-ai-config
+  namespace: svg-ai
+data:
+  NODE_ENV: "production"
+  PORT: "3001"
+  CACHE_TTL_MINUTES: "60"
+  CACHE_MAX_SIZE: "1000"
+  LOG_LEVEL: "info"
+  METRICS_ENABLED: "true"
+  HEALTH_CHECK_INTERVAL: "30"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: svg-ai
+data:
+  nginx.conf: |
+    events {
+        worker_connections 1024;
+    }
+    
+    http {
+        upstream svg-ai-backend {
+            server svg-ai-service:3001;
+        }
+        
+        server {
+            listen 80;
+            server_name _;
+            
+            # Security headers
+            add_header X-Frame-Options DENY;
+            add_header X-Content-Type-Options nosniff;
+            add_header X-XSS-Protection "1; mode=block";
+            add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
+            
+            # Gzip compression
+            gzip on;
+            gzip_vary on;
+            gzip_min_length 1024;
+            gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json;
+            
+            # Static files
+            location /assets/ {
+                root /usr/share/nginx/html;
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+            }
+            
+            # API routes
+            location /api/ {
+                proxy_pass http://svg-ai-backend;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                
+                # Timeouts
+                proxy_connect_timeout 30s;
+                proxy_send_timeout 30s;
+                proxy_read_timeout 30s;
+            }
+            
+            # Health check
+            location /health {
+                proxy_pass http://svg-ai-backend/health;
+                access_log off;
+            }
+            
+            # Default route
+            location / {
+                try_files $uri $uri/ /index.html;
+                root /usr/share/nginx/html;
+            }
+        }
+    }

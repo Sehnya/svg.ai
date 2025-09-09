@@ -1,0 +1,166 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svg-ai-app
+  namespace: svg-ai
+  labels:
+    app: svg-ai
+    component: backend
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: svg-ai
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: svg-ai
+        component: backend
+    spec:
+      containers:
+      - name: svg-ai
+        image: ghcr.io/your-org/svg-ai:latest
+        ports:
+        - containerPort: 3001
+          name: http
+        env:
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: svg-ai-config
+              key: NODE_ENV
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: svg-ai-config
+              key: PORT
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: svg-ai-secrets
+              key: DATABASE_URL
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: svg-ai-secrets
+              key: OPENAI_API_KEY
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: svg-ai-secrets
+              key: REDIS_URL
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3001
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: logs
+        emptyDir: {}
+      securityContext:
+        fsGroup: 1001
+      serviceAccountName: svg-ai-service-account
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svg-ai-nginx
+  namespace: svg-ai
+  labels:
+    app: svg-ai
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: svg-ai
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: svg-ai
+        component: frontend
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        - name: static-files
+          mountPath: /usr/share/nginx/html
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-config
+      - name: static-files
+        emptyDir: {}
+      initContainers:
+      - name: copy-static-files
+        image: ghcr.io/your-org/svg-ai:latest
+        command: ['sh', '-c', 'cp -r /app/dist/* /static/']
+        volumeMounts:
+        - name: static-files
+          mountPath: /static

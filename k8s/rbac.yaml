@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: svg-ai-service-account
+  namespace: svg-ai
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: svg-ai
+  name: svg-ai-role
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: svg-ai-role-binding
+  namespace: svg-ai
+subjects:
+- kind: ServiceAccount
+  name: svg-ai-service-account
+  namespace: svg-ai
+roleRef:
+  kind: Role
+  name: svg-ai-role
+  apiGroup: rbac.authorization.k8s.io

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { OpenAIGenerator } from "../../server/services/OpenAIGenerator";
 import type { GenerationRequest } from "../../server/types";
 
@@ -6,7 +6,7 @@ import type { GenerationRequest } from "../../server/types";
 const mockOpenAI = {
   chat: {
     completions: {
-      create: mock(() =>
+      create: vi.fn(() =>
         Promise.resolve({
           choices: [
             {
@@ -25,7 +25,7 @@ const mockOpenAI = {
 };
 
 // Mock the OpenAI module
-mock.module("openai", () => {
+vi.mock("openai", () => {
   return {
     default: function () {
       return mockOpenAI;

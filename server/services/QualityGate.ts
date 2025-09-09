@@ -19,6 +19,7 @@ export interface QualityMetrics {
 
 export class QualityGate {
   private readonly PASS_THRESHOLD = 70; // Minimum score to pass
+  private readonly ENABLE_VISION_VALIDATION = false; // Feature flag for vision model validation
 
   async validate(
     document: AISVGDocument,
@@ -53,7 +54,25 @@ export class QualityGate {
     };
 
     const score = this.calculateOverallScore(metrics);
-    const passed = score >= this.PASS_THRESHOLD && issues.length === 0;
+    let passed = score >= this.PASS_THRESHOLD && issues.length === 0;
+
+    // Optional vision model validation for enhanced quality checks
+    if (this.ENABLE_VISION_VALIDATION && passed) {
+      try {
+        const visionResult = await this.validateWithVisionModel(
+          document,
+          intent
+        );
+        if (!visionResult.passed) {
+          warnings.push(...visionResult.warnings);
+          // Don't fail on vision validation, just add warnings
+        }
+      } catch (error) {
+        warnings.push(
+          `Vision validation failed: ${error instanceof Error ? error.message : "Unknown error"}`
+        );
+      }
+    }
 
     return {
       passed,
@@ -255,11 +274,34 @@ export class QualityGate {
     const warnings: string[] = [];
     let score = 100;
 
+    // Check for NaN or invalid numeric values
+    let invalidNumericCount = 0;
+    document.components.forEach((comp) => {
+      Object.entries(comp.attributes).forEach(([attributeName, value]) => {
+        if (typeof value === "number") {
+          if (!this.isValidNumber(value)) {
+            invalidNumericCount++;
+            issues.push(
+              `Component ${comp.id} has invalid ${attributeName}: ${value}`
+            );
+          }
+        }
+      });
+    });
+
+    if (invalidNumericCount > 0) {
+      score -= invalidNumericCount * 25; // Heavy penalty for invalid numbers
+    }
+
     // Check decimal precision
     let highPrecisionCount = 0;
     document.components.forEach((comp) => {
       Object.entries(comp.attributes).forEach(([key, value]) => {
-        if (typeof value === "number" && !Number.isInteger(value)) {
+        if (
+          typeof value === "number" &&
+          this.isValidNumber(value) &&
+          !Number.isInteger(value)
+        ) {
           const decimals = value.toString().split(".")[1]?.length || 0;
           if (decimals > 2) {
             highPrecisionCount++;
@@ -329,6 +371,16 @@ export class QualityGate {
         const cx = attrs.cx as number;
         const cy = attrs.cy as number;
         const r = attrs.r as number;
+
+        // Check for invalid coordinates first
+        if (
+          !this.isValidNumber(cx) ||
+          !this.isValidNumber(cy) ||
+          !this.isValidNumber(r)
+        ) {
+          return true; // Consider invalid coordinates as out of bounds
+        }
+
         return (
           cx - r < 0 ||
           cx + r > bounds.width ||
@@ -341,6 +393,17 @@ export class QualityGate {
         const y = attrs.y as number;
         const width = attrs.width as number;
         const height = attrs.height as number;
+
+        // Check for invalid coordinates first
+        if (
+          !this.isValidNumber(x) ||
+          !this.isValidNumber(y) ||
+          !this.isValidNumber(width) ||
+          !this.isValidNumber(height)
+        ) {
+          return true; // Consider invalid coordinates as out of bounds
+        }
+
         return (
           x < 0 ||
           y < 0 ||
@@ -353,6 +416,17 @@ export class QualityGate {
         const ecy = attrs.cy as number;
         const rx = attrs.rx as number;
         const ry = attrs.ry as number;
+
+        // Check for invalid coordinates first
+        if (
+          !this.isValidNumber(ecx) ||
+          !this.isValidNumber(ecy) ||
+          !this.isValidNumber(rx) ||
+          !this.isValidNumber(ry)
+        ) {
+          return true; // Consider invalid coordinates as out of bounds
+        }
+
         return (
           ecx - rx < 0 ||
           ecx + rx > bounds.width ||
@@ -372,38 +446,38 @@ export class QualityGate {
     switch (component.element) {
       case "circle":
         return (
-          typeof attrs.cx === "number" &&
-          typeof attrs.cy === "number" &&
-          typeof attrs.r === "number" &&
+          this.isValidNumber(attrs.cx) &&
+          this.isValidNumber(attrs.cy) &&
+          this.isValidNumber(attrs.r) &&
           attrs.r > 0
         );
 
       case "rect":
         return (
-          typeof attrs.x === "number" &&
-          typeof attrs.y === "number" &&
-          typeof attrs.width === "number" &&
+          this.isValidNumber(attrs.x) &&
+          this.isValidNumber(attrs.y) &&
+          this.isValidNumber(attrs.width) &&
           attrs.width > 0 &&
-          typeof attrs.height === "number" &&
+          this.isValidNumber(attrs.height) &&
           attrs.height > 0
         );
 
       case "ellipse":
         return (
-          typeof attrs.cx === "number" &&
-          typeof attrs.cy === "number" &&
-          typeof attrs.rx === "number" &&
+          this.isValidNumber(attrs.cx) &&
+          this.isValidNumber(attrs.cy) &&
+          this.isValidNumber(attrs.rx) &&
           attrs.rx > 0 &&
-          typeof attrs.ry === "number" &&
+          this.isValidNumber(attrs.ry) &&
           attrs.ry > 0
         );
 
       case "line":
         return (
-          typeof attrs.x1 === "number" &&
-          typeof attrs.y1 === "number" &&
-          typeof attrs.x2 === "number" &&
-          typeof attrs.y2 === "number"
+          this.isValidNumber(attrs.x1) &&
+          this.isValidNumber(attrs.y1) &&
+          this.isValidNumber(attrs.x2) &&
+          this.isValidNumber(attrs.y2)
         );
 
       case "polygon":
@@ -454,5 +528,78 @@ export class QualityGate {
         metrics.styleConsistency * weights.styleConsistency +
         metrics.technicalQuality * weights.technicalQuality
     );
+  }
+
+  /**
+   * Optional vision model validation for enhanced quality checks
+   * Rasterizes SVG and validates motif presence using vision model
+   */
+  private async validateWithVisionModel(
+    document: AISVGDocument,
+    intent: DesignIntent
+  ): Promise<{ passed: boolean; warnings: string[] }> {
+    const warnings: string[] = [];
+
+    try {
+      // This would integrate with a vision model API to validate the rendered SVG
+      // For now, this is a placeholder implementation
+
+      // Check if required motifs are visually present
+      for (const requiredMotif of intent.constraints.requiredMotifs) {
+        // In a real implementation, this would:
+        // 1. Render the SVG to a raster image
+        // 2. Send the image to a vision model (e.g., GPT-4V, Claude Vision)
+        // 3. Ask the model to identify if the motif is present
+        // 4. Return validation results
+
+        const isMotifPresent = await this.checkMotifWithVision(
+          document,
+          requiredMotif
+        );
+        if (!isMotifPresent) {
+          warnings.push(
+            `Vision model could not detect required motif: ${requiredMotif}`
+          );
+        }
+      }
+
+      return {
+        passed: warnings.length === 0,
+        warnings,
+      };
+    } catch (error) {
+      return {
+        passed: false,
+        warnings: [
+          `Vision validation error: ${error instanceof Error ? error.message : "Unknown error"}`,
+        ],
+      };
+    }
+  }
+
+  /**
+   * Placeholder for vision-based motif detection
+   * In a real implementation, this would use a vision model API
+   */
+  private async checkMotifWithVision(
+    document: AISVGDocument,
+    motif: string
+  ): Promise<boolean> {
+    // Placeholder implementation - always returns true for now
+    // In production, this would:
+    // 1. Convert SVG to PNG/JPEG using a library like sharp or puppeteer
+    // 2. Send image to vision model with prompt like:
+    //    "Does this image contain a {motif}? Answer yes or no."
+    // 3. Parse the response and return boolean
+
+    // For now, just check if the motif exists in component metadata
+    return document.components.some((comp) => comp.metadata?.motif === motif);
+  }
+
+  /**
+   * Checks if a number is valid (not NaN, not Infinity)
+   */
+  private isValidNumber(value: number): boolean {
+    return typeof value === "number" && isFinite(value) && !isNaN(value);
   }
 }

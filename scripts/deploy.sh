@@ -1,124 +1,142 @@
 #!/bin/bash
 
-# Production deployment script
+# SVG AI Deployment Script
+# This script deploys the application to Kubernetes
+
 set -e
 
-echo "🚀 Starting production deployment..."
-
 # Configuration
-IMAGE_NAME="svg-ai"
-CONTAINER_NAME="svg-ai-prod"
-NETWORK_NAME="svg-ai-network"
+NAMESPACE="svg-ai"
+ENVIRONMENT="${1:-production}"
+IMAGE_TAG="${2:-latest}"
+REGISTRY="ghcr.io/your-org/svg-ai"
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-# Function to print colored output
-print_status() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+# Logging
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+# Usage
+usage() {
+    echo "Usage: $0 [environment] [image-tag]"
+    echo "Environments: production, staging"
+    echo "Example: $0 production v1.2.3"
+    exit 1
 }
 
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+# Validate environment
+if [[ "$ENVIRONMENT" != "production" && "$ENVIRONMENT" != "staging" ]]; then
+    log "ERROR: Invalid environment. Use 'production' or 'staging'"
+    usage
+fi
 
-# Check if Docker is running
-if ! docker info > /dev/null 2>&1; then
-    print_error "Docker is not running. Please start Docker and try again."
+log "Starting deployment to ${ENVIRONMENT} environment..."
+
+# Check prerequisites
+if ! command -v kubectl &> /dev/null; then
+    log "ERROR: kubectl is not installed"
     exit 1
 fi
 
-# Check if required files exist
-if [ ! -f "Dockerfile" ]; then
-    print_error "Dockerfile not found. Please run this script from the project root."
+if ! command -v helm &> /dev/null; then
+    log "WARNING: helm is not installed, using kubectl directly"
+fi
+
+# Verify cluster connection
+if ! kubectl cluster-info &> /dev/null; then
+    log "ERROR: Cannot connect to Kubernetes cluster"
     exit 1
 fi
 
-if [ ! -f ".env.production" ]; then
-    print_warning ".env.production not found. Using default environment variables."
+# Create namespace if it doesn't exist
+log "Creating namespace if needed..."
+kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+
+# Apply RBAC
+log "Applying RBAC configuration..."
+kubectl apply -f k8s/rbac.yaml
+
+# Apply ConfigMaps and Secrets
+log "Applying configuration..."
+kubectl apply -f k8s/configmap.yaml
+
+# Check if secrets exist, create if needed
+if ! kubectl get secret svg-ai-secrets -n "${NAMESPACE}" &> /dev/null; then
+    log "WARNING: Secrets not found. Please create them manually:"
+    echo "kubectl create secret generic svg-ai-secrets \\"
+    echo "  --from-env-file=config/${ENVIRONMENT}.env \\"
+    echo "  --namespace=${NAMESPACE}"
+    exit 1
 fi
 
-# Load environment variables
-if [ -f ".env.production" ]; then
-    export $(cat .env.production | grep -v '^#' | xargs)
-fi
+# Update image tag in deployment
+log "Updating deployment with image tag: ${IMAGE_TAG}"
+sed "s|image: ghcr.io/your-org/svg-ai:latest|image: ${REGISTRY}:${IMAGE_TAG}|g" k8s/deployment.yaml | kubectl apply -f -
 
-# Stop and remove existing container
-print_status "Stopping existing container..."
-docker stop $CONTAINER_NAME 2>/dev/null || true
-docker rm $CONTAINER_NAME 2>/dev/null || true
+# Apply services
+log "Applying services..."
+kubectl apply -f k8s/service.yaml
 
-# Remove old image
-print_status "Removing old image..."
-docker rmi $IMAGE_NAME:latest 2>/dev/null || true
+# Apply ingress
+log "Applying ingress..."
+kubectl apply -f k8s/ingress.yaml
 
-# Build new image
-print_status "Building new Docker image..."
-docker build -t $IMAGE_NAME:latest .
+# Apply HPA
+log "Applying horizontal pod autoscaler..."
+kubectl apply -f k8s/hpa.yaml
 
-# Create network if it doesn't exist
-docker network create $NETWORK_NAME 2>/dev/null || true
+# Wait for deployment to be ready
+log "Waiting for deployment to be ready..."
+kubectl rollout status deployment/svg-ai-app -n "${NAMESPACE}" --timeout=600s
+kubectl rollout status deployment/svg-ai-nginx -n "${NAMESPACE}" --timeout=300s
 
-# Run new container
-print_status "Starting new container..."
-docker run -d \
-    --name $CONTAINER_NAME \
-    --network $NETWORK_NAME \
-    -p 3001:3001 \
-    --env-file .env.production \
-    --restart unless-stopped \
-    --health-cmd="curl -f http://localhost:3001/health || exit 1" \
-    --health-interval=30s \
-    --health-timeout=10s \
-    --health-retries=3 \
-    $IMAGE_NAME:latest
+# Verify deployment
+log "Verifying deployment..."
+kubectl get pods -n "${NAMESPACE}" -l app=svg-ai
 
-# Wait for container to be healthy
-print_status "Waiting for container to be healthy..."
-timeout=60
-counter=0
+# Run health check
+log "Running health check..."
+sleep 30
 
-while [ $counter -lt $timeout ]; do
-    if docker inspect --format='{{.State.Health.Status}}' $CONTAINER_NAME 2>/dev/null | grep -q "healthy"; then
-        print_status "Container is healthy!"
-        break
-    fi
-    
-    if [ $counter -eq $((timeout - 1)) ]; then
-        print_error "Container failed to become healthy within $timeout seconds"
-        docker logs $CONTAINER_NAME
-        exit 1
-    fi
-    
-    sleep 1
-    counter=$((counter + 1))
-done
+# Port forward for health check
+kubectl port-forward service/svg-ai-service 8080:3001 -n "${NAMESPACE}" &
+PF_PID=$!
+sleep 5
 
-# Test the deployment
-print_status "Testing deployment..."
-if curl -f http://localhost:3001/health > /dev/null 2>&1; then
-    print_status "✅ Deployment successful! Application is running at http://localhost:3001"
+if curl -f http://localhost:8080/api/health > /dev/null 2>&1; then
+    log "✅ Health check passed"
 else
-    print_error "❌ Deployment failed! Health check failed."
-    docker logs $CONTAINER_NAME
+    log "❌ Health check failed"
+    kubectl logs -l app=svg-ai,component=backend -n "${NAMESPACE}" --tail=50
+    kill $PF_PID 2>/dev/null || true
     exit 1
 fi
 
-# Show container status
-print_status "Container status:"
-docker ps | grep $CONTAINER_NAME
+kill $PF_PID 2>/dev/null || true
 
-# Show logs
-print_status "Recent logs:"
-docker logs --tail 20 $CONTAINER_NAME
+# Display deployment info
+log "Deployment completed successfully!"
+echo ""
+echo "Deployment Information:"
+echo "======================"
+echo "Environment: ${ENVIRONMENT}"
+echo "Image: ${REGISTRY}:${IMAGE_TAG}"
+echo "Namespace: ${NAMESPACE}"
+echo ""
+echo "Services:"
+kubectl get services -n "${NAMESPACE}"
+echo ""
+echo "Ingress:"
+kubectl get ingress -n "${NAMESPACE}"
+echo ""
+echo "Pods:"
+kubectl get pods -n "${NAMESPACE}" -l app=svg-ai
 
-print_status "🎉 Deployment completed successfully!"
-print_status "You can view logs with: docker logs -f $CONTAINER_NAME"
-print_status "You can stop the container with: docker stop $CONTAINER_NAME"
+# Send notification
+if [ -n "${SLACK_WEBHOOK_URL}" ]; then
+    curl -X POST -H 'Content-type: application/json' \
+        --data "{\"text\":\"🚀 SVG AI deployed successfully to ${ENVIRONMENT}: ${REGISTRY}:${IMAGE_TAG}\"}" \
+        "${SLACK_WEBHOOK_URL}"
+fi
+
+log "Deployment script completed"

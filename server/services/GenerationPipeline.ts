@@ -220,7 +220,8 @@ export class GenerationPipeline {
   }
 
   private createBasicComponent(componentPlan: any) {
-    const { id, type, position, size, style } = componentPlan;
+    const { id, position, size, style } = componentPlan;
+    let { type } = componentPlan;
 
     const attributes: Record<string, string | number> = {};
 

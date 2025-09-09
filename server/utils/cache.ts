@@ -385,5 +385,73 @@ export class CacheManager {
   }
 }
 
+// Simple ResponseCache class for backward compatibility
+export class ResponseCache {
+  private cache = new Map<string, { data: any; timestamp: number }>();
+  private maxSize: number;
+  private ttlMinutes: number;
+
+  constructor(maxSize: number = 1000, ttlMinutes: number = 60) {
+    this.maxSize = maxSize;
+    this.ttlMinutes = ttlMinutes;
+  }
+
+  private generateKey(request: any): string {
+    return createHash("md5").update(JSON.stringify(request)).digest("hex");
+  }
+
+  get(request: any): any | null {
+    const key = this.generateKey(request);
+    const entry = this.cache.get(key);
+
+    if (!entry) return null;
+
+    const now = Date.now();
+    const ttlMs = this.ttlMinutes * 60 * 1000;
+
+    if (now - entry.timestamp > ttlMs) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    return entry.data;
+  }
+
+  set(request: any, data: any): void {
+    const key = this.generateKey(request);
+
+    // Simple LRU: remove oldest if at capacity
+    if (this.cache.size >= this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+    });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  getStats(): any {
+    return {
+      size: this.cache.size,
+      maxSize: this.maxSize,
+      ttlMinutes: this.ttlMinutes,
+    };
+  }
+
+  getEntries(): any[] {
+    return Array.from(this.cache.entries()).map(([key, entry]) => ({
+      key,
+      timestamp: entry.timestamp,
+      data: entry.data,
+    }));
+  }
+}
+
 // Export singleton instance
 export const cacheManager = CacheManager.getInstance();

@@ -46,7 +46,8 @@ export class RuleBasedGenerator extends SVGGenerator {
     try {
       const seed = request.seed || this.generateSeed();
       const { width, height } = request.size;
-      const colors = request.palette || this.getDefaultPalette();
+      const colors =
+        request.palette || this.extractColorsFromPrompt(request.prompt);
 
       // Parse prompt to determine shape type
       const template = this.selectTemplate(request.prompt);
@@ -464,8 +465,359 @@ export class RuleBasedGenerator extends SVGGenerator {
     };
   }
 
+  private generateFlower(
+    width: number,
+    height: number,
+    colors: string[],
+    seed: number
+  ): string {
+    const seededRandom = this.createSeededRandom(seed);
+    const centerX = this.limitPrecision(width / 2);
+    const centerY = this.limitPrecision(height / 2);
+    const petalRadius = this.limitPrecision(Math.min(width, height) * 0.15);
+    const centerRadius = this.limitPrecision(petalRadius * 0.3);
+
+    const petalColor = colors[Math.floor(seededRandom() * colors.length)];
+    const centerColor = colors[Math.floor(seededRandom() * colors.length)];
+
+    const petals: string[] = [];
+    const numPetals = 5 + Math.floor(seededRandom() * 3); // 5-7 petals
+
+    // Generate petals in a circle
+    for (let i = 0; i < numPetals; i++) {
+      const angle = (i * 2 * Math.PI) / numPetals;
+      const petalX = this.limitPrecision(
+        centerX + Math.cos(angle) * petalRadius * 1.5
+      );
+      const petalY = this.limitPrecision(
+        centerY + Math.sin(angle) * petalRadius * 1.5
+      );
+
+      petals.push(
+        `<ellipse cx="${petalX}" cy="${petalY}" rx="${petalRadius}" ry="${this.limitPrecision(petalRadius * 0.6)}" fill="${petalColor}" transform="rotate(${this.limitPrecision((angle * 180) / Math.PI)} ${petalX} ${petalY})"/>`
+      );
+    }
+
+    // Add center
+    petals.push(
+      `<circle cx="${centerX}" cy="${centerY}" r="${centerRadius}" fill="${centerColor}"/>`
+    );
+
+    return `<g id="flower">${petals.join("")}</g>`;
+  }
+
+  private generateLeaf(
+    width: number,
+    height: number,
+    colors: string[],
+    seed: number
+  ): string {
+    const seededRandom = this.createSeededRandom(seed);
+    const centerX = this.limitPrecision(width / 2);
+    const centerY = this.limitPrecision(height / 2);
+    const leafWidth = this.limitPrecision(Math.min(width, height) * 0.3);
+    const leafHeight = this.limitPrecision(leafWidth * 1.5);
+
+    const color = colors[Math.floor(seededRandom() * colors.length)];
+
+    // Create leaf shape using path
+    const path = `M ${centerX} ${centerY - leafHeight / 2} 
+                  Q ${centerX + leafWidth / 2} ${centerY} ${centerX} ${centerY + leafHeight / 2}
+                  Q ${centerX - leafWidth / 2} ${centerY} ${centerX} ${centerY - leafHeight / 2}`;
+
+    return `<path d="${path}" fill="${color}" id="leaf"/>`;
+  }
+
+  private generateTree(
+    width: number,
+    height: number,
+    colors: string[],
+    seed: number
+  ): string {
+    const seededRandom = this.createSeededRandom(seed);
+    const centerX = this.limitPrecision(width / 2);
+    const groundY = this.limitPrecision(height * 0.8);
+    const trunkWidth = this.limitPrecision(Math.min(width, height) * 0.05);
+    const trunkHeight = this.limitPrecision(height * 0.3);
+    const crownRadius = this.limitPrecision(Math.min(width, height) * 0.2);
+
+    const trunkColor = colors[Math.floor(seededRandom() * colors.length)];
+    const crownColor = colors[Math.floor(seededRandom() * colors.length)];
+
+    const elements: string[] = [];
+
+    // Trunk
+    elements.push(
+      `<rect x="${this.limitPrecision(centerX - trunkWidth / 2)}" y="${this.limitPrecision(groundY - trunkHeight)}" width="${trunkWidth}" height="${trunkHeight}" fill="${trunkColor}"/>`
+    );
+
+    // Crown
+    elements.push(
+      `<circle cx="${centerX}" cy="${this.limitPrecision(groundY - trunkHeight)}" r="${crownRadius}" fill="${crownColor}"/>`
+    );
+
+    return `<g id="tree">${elements.join("")}</g>`;
+  }
+
+  private generateHexagon(
+    width: number,
+    height: number,
+    colors: string[],
+    seed: number
+  ): string {
+    const seededRandom = this.createSeededRandom(seed);
+    const centerX = this.limitPrecision(width / 2);
+    const centerY = this.limitPrecision(height / 2);
+    const radius = this.limitPrecision(Math.min(width, height) * 0.3);
+    const color = colors[Math.floor(seededRandom() * colors.length)];
+
+    const points: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const angle = (i * Math.PI) / 3;
+      const x = this.limitPrecision(centerX + radius * Math.cos(angle));
+      const y = this.limitPrecision(centerY + radius * Math.sin(angle));
+      points.push(`${x},${y}`);
+    }
+
+    return `<polygon points="${points.join(" ")}" fill="${color}" id="hexagon"/>`;
+  }
+
+  private generatePentagon(
+    width: number,
+    height: number,
+    colors: string[],
+    seed: number
+  ): string {
+    const seededRandom = this.createSeededRandom(seed);
+    const centerX = this.limitPrecision(width / 2);
+    const centerY = this.limitPrecision(height / 2);
+    const radius = this.limitPrecision(Math.min(width, height) * 0.3);
+    const color = colors[Math.floor(seededRandom() * colors.length)];
+
+    const points: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const angle = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+      const x = this.limitPrecision(centerX + radius * Math.cos(angle));
+      const y = this.limitPrecision(centerY + radius * Math.sin(angle));
+      points.push(`${x},${y}`);
+    }
+
+    return `<polygon points="${points.join(" ")}" fill="${color}" id="pentagon"/>`;
+  }
+
+  private generateOctagon(
+    width: number,
+    height: number,
+    colors: string[],
+    seed: number
+  ): string {
+    const seededRandom = this.createSeededRandom(seed);
+    const centerX = this.limitPrecision(width / 2);
+    const centerY = this.limitPrecision(height / 2);
+    const radius = this.limitPrecision(Math.min(width, height) * 0.3);
+    const color = colors[Math.floor(seededRandom() * colors.length)];
+
+    const points: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      const angle = (i * Math.PI) / 4;
+      const x = this.limitPrecision(centerX + radius * Math.cos(angle));
+      const y = this.limitPrecision(centerY + radius * Math.sin(angle));
+      points.push(`${x},${y}`);
+    }
+
+    return `<polygon points="${points.join(" ")}" fill="${color}" id="octagon"/>`;
+  }
+
+  private generateDiamond(
+    width: number,
+    height: number,
+    colors: string[],
+    seed: number
+  ): string {
+    const seededRandom = this.createSeededRandom(seed);
+    const centerX = this.limitPrecision(width / 2);
+    const centerY = this.limitPrecision(height / 2);
+    const halfWidth = this.limitPrecision(Math.min(width, height) * 0.25);
+    const halfHeight = this.limitPrecision(halfWidth * 1.2);
+    const color = colors[Math.floor(seededRandom() * colors.length)];
+
+    const points = [
+      `${centerX},${centerY - halfHeight}`,
+      `${centerX + halfWidth},${centerY}`,
+      `${centerX},${centerY + halfHeight}`,
+      `${centerX - halfWidth},${centerY}`,
+    ].join(" ");
+
+    return `<polygon points="${points}" fill="${color}" id="diamond"/>`;
+  }
+
+  private generateHeart(
+    width: number,
+    height: number,
+    colors: string[],
+    seed: number
+  ): string {
+    const seededRandom = this.createSeededRandom(seed);
+    const centerX = this.limitPrecision(width / 2);
+    const centerY = this.limitPrecision(height / 2);
+    const size = this.limitPrecision(Math.min(width, height) * 0.15);
+    const color = colors[Math.floor(seededRandom() * colors.length)];
+
+    // Heart shape using path
+    const path = `M ${centerX} ${centerY + size}
+                  C ${centerX} ${centerY + size}, ${centerX - size * 2} ${centerY - size}, ${centerX - size} ${centerY - size}
+                  C ${centerX - size / 2} ${centerY - size * 1.5}, ${centerX + size / 2} ${centerY - size * 1.5}, ${centerX + size} ${centerY - size}
+                  C ${centerX + size * 2} ${centerY - size}, ${centerX} ${centerY + size}, ${centerX} ${centerY + size}`;
+
+    return `<path d="${path}" fill="${color}" id="heart"/>`;
+  }
+
+  private generateWave(
+    width: number,
+    height: number,
+    colors: string[],
+    seed: number
+  ): string {
+    const seededRandom = this.createSeededRandom(seed);
+    const color = colors[Math.floor(seededRandom() * colors.length)];
+    const amplitude = this.limitPrecision(height * 0.2);
+    const frequency = 2 + Math.floor(seededRandom() * 3);
+    const centerY = this.limitPrecision(height / 2);
+
+    const points: string[] = [];
+    for (let x = 0; x <= width; x += 5) {
+      const y = this.limitPrecision(
+        centerY + amplitude * Math.sin((x / width) * frequency * 2 * Math.PI)
+      );
+      points.push(`${x},${y}`);
+    }
+
+    return `<polyline points="${points.join(" ")}" fill="none" stroke="${color}" stroke-width="3" id="wave"/>`;
+  }
+
+  private generateSpiral(
+    width: number,
+    height: number,
+    colors: string[],
+    seed: number
+  ): string {
+    const seededRandom = this.createSeededRandom(seed);
+    const centerX = this.limitPrecision(width / 2);
+    const centerY = this.limitPrecision(height / 2);
+    const maxRadius = this.limitPrecision(Math.min(width, height) * 0.4);
+    const color = colors[Math.floor(seededRandom() * colors.length)];
+
+    const points: string[] = [];
+    const turns = 3;
+    const steps = 100;
+
+    for (let i = 0; i <= steps; i++) {
+      const angle = (i / steps) * turns * 2 * Math.PI;
+      const radius = (i / steps) * maxRadius;
+      const x = this.limitPrecision(centerX + radius * Math.cos(angle));
+      const y = this.limitPrecision(centerY + radius * Math.sin(angle));
+      points.push(`${x},${y}`);
+    }
+
+    return `<polyline points="${points.join(" ")}" fill="none" stroke="${color}" stroke-width="2" id="spiral"/>`;
+  }
+
+  private generateArrow(
+    width: number,
+    height: number,
+    colors: string[],
+    seed: number
+  ): string {
+    const seededRandom = this.createSeededRandom(seed);
+    const centerY = this.limitPrecision(height / 2);
+    const arrowLength = this.limitPrecision(width * 0.6);
+    const arrowWidth = this.limitPrecision(height * 0.1);
+    const headWidth = this.limitPrecision(height * 0.2);
+    const startX = this.limitPrecision((width - arrowLength) / 2);
+    const color = colors[Math.floor(seededRandom() * colors.length)];
+
+    const points = [
+      `${startX},${centerY - arrowWidth / 2}`,
+      `${startX + arrowLength - headWidth},${centerY - arrowWidth / 2}`,
+      `${startX + arrowLength - headWidth},${centerY - headWidth / 2}`,
+      `${startX + arrowLength},${centerY}`,
+      `${startX + arrowLength - headWidth},${centerY + headWidth / 2}`,
+      `${startX + arrowLength - headWidth},${centerY + arrowWidth / 2}`,
+      `${startX},${centerY + arrowWidth / 2}`,
+    ].join(" ");
+
+    return `<polygon points="${points}" fill="${color}" id="arrow"/>`;
+  }
+
+  private generateMandala(
+    width: number,
+    height: number,
+    colors: string[],
+    seed: number
+  ): string {
+    const seededRandom = this.createSeededRandom(seed);
+    const centerX = this.limitPrecision(width / 2);
+    const centerY = this.limitPrecision(height / 2);
+    const radius = this.limitPrecision(Math.min(width, height) * 0.4);
+    const color = colors[Math.floor(seededRandom() * colors.length)];
+
+    const elements: string[] = [];
+    const layers = 3;
+
+    for (let layer = 0; layer < layers; layer++) {
+      const layerRadius = radius * (1 - layer * 0.3);
+      const petals = 8 + layer * 4;
+
+      for (let i = 0; i < petals; i++) {
+        const angle = (i * 2 * Math.PI) / petals;
+        const x = this.limitPrecision(centerX + layerRadius * Math.cos(angle));
+        const y = this.limitPrecision(centerY + layerRadius * Math.sin(angle));
+        const petalRadius = this.limitPrecision(layerRadius * 0.2);
+
+        elements.push(
+          `<circle cx="${x}" cy="${y}" r="${petalRadius}" fill="${color}" opacity="${0.7 - layer * 0.2}"/>`
+        );
+      }
+    }
+
+    // Center circle
+    elements.push(
+      `<circle cx="${centerX}" cy="${centerY}" r="${this.limitPrecision(radius * 0.1)}" fill="${color}"/>`
+    );
+
+    return `<g id="mandala">${elements.join("")}</g>`;
+  }
+
   private getDefaultPalette(): string[] {
     return ["#3B82F6", "#1E40AF", "#1D4ED8"];
+  }
+
+  private extractColorsFromPrompt(prompt: string): string[] {
+    const lowerPrompt = prompt.toLowerCase();
+    const colorMap: Record<string, string[]> = {
+      red: ["#DC2626", "#B91C1C", "#991B1B"],
+      pink: ["#EC4899", "#DB2777", "#BE185D"],
+      purple: ["#9333EA", "#7C3AED", "#6D28D9"],
+      blue: ["#2563EB", "#1D4ED8", "#1E40AF"],
+      green: ["#16A34A", "#15803D", "#166534"],
+      yellow: ["#EAB308", "#CA8A04", "#A16207"],
+      orange: ["#EA580C", "#DC2626", "#C2410C"],
+      brown: ["#A16207", "#92400E", "#78350F"],
+      black: ["#1F2937", "#111827", "#030712"],
+      white: ["#F9FAFB", "#F3F4F6", "#E5E7EB"],
+      gray: ["#6B7280", "#4B5563", "#374151"],
+      grey: ["#6B7280", "#4B5563", "#374151"],
+    };
+
+    // Check for color keywords in the prompt
+    for (const [colorName, palette] of Object.entries(colorMap)) {
+      if (lowerPrompt.includes(colorName)) {
+        return palette;
+      }
+    }
+
+    // Default palette
+    return this.getDefaultPalette();
   }
 
   private createEmptyMetadata(): SVGMetadata {
@@ -478,5 +830,9 @@ export class RuleBasedGenerator extends SVGGenerator {
       description: "",
       seed: 0,
     };
+  }
+
+  private limitPrecision(value: number): number {
+    return Math.round(value * 100) / 100;
   }
 }

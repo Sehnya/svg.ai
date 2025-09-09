@@ -144,16 +144,21 @@ export class OpenAIGenerator extends SVGGenerator {
       try {
         const parsed = JSON.parse(response);
 
-        if (!parsed.svg) {
+        if (!parsed.elements || !Array.isArray(parsed.elements)) {
           return {
             success: false,
-            errors: ["No SVG content in OpenAI response"],
+            errors: [
+              "Invalid JSON structure from OpenAI - missing elements array",
+            ],
           };
         }
 
+        // Generate SVG from the JSON description
+        const svg = this.generateSVGFromJSON(parsed, request.size);
+
         return {
           success: true,
-          svg: parsed.svg,
+          svg,
           warnings: parsed.warnings || [],
         };
       } catch (parseError) {
@@ -178,43 +183,351 @@ export class OpenAIGenerator extends SVGGenerator {
     }
   }
 
+  private generateSVGFromJSON(
+    jsonData: any,
+    size: { width: number; height: number }
+  ): string {
+    const { elements, background } = jsonData;
+    let svgContent = "";
+
+    // Add background if specified
+    if (background && background.type !== "none") {
+      if (background.type === "solid" && background.color) {
+        svgContent += `<rect width="100%" height="100%" fill="${background.color}" id="background"/>`;
+      } else if (background.type === "gradient" && background.gradient) {
+        const {
+          startColor,
+          endColor,
+          direction = "vertical",
+        } = background.gradient;
+        const gradientId = "bg-gradient";
+
+        let x1 = "0%",
+          y1 = "0%",
+          x2 = "0%",
+          y2 = "100%";
+        if (direction === "horizontal") {
+          x1 = "0%";
+          y1 = "0%";
+          x2 = "100%";
+          y2 = "0%";
+        } else if (direction === "diagonal") {
+          x1 = "0%";
+          y1 = "0%";
+          x2 = "100%";
+          y2 = "100%";
+        }
+
+        svgContent += `
+          <defs>
+            <linearGradient id="${gradientId}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">
+              <stop offset="0%" style="stop-color:${startColor};stop-opacity:1" />
+              <stop offset="100%" style="stop-color:${endColor};stop-opacity:1" />
+            </linearGradient>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#${gradientId})" id="background"/>`;
+      }
+    }
+
+    // Generate elements
+    elements.forEach((element: any, index: number) => {
+      const elementSVG = this.generateElementSVG(element, index);
+      if (elementSVG) {
+        svgContent += elementSVG;
+      }
+    });
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size.width} ${size.height}" width="${size.width}" height="${size.height}">
+      ${svgContent}
+    </svg>`;
+  }
+
+  private generateElementSVG(element: any, index: number): string {
+    const id = element.id || `element-${index}`;
+
+    switch (element.type) {
+      case "circle":
+        return this.generateCircleElement(element, id);
+      case "rectangle":
+        return this.generateRectangleElement(element, id);
+      case "polygon":
+        return this.generatePolygonElement(element, id);
+      case "path":
+        return this.generatePathElement(element, id);
+      case "ellipse":
+        return this.generateEllipseElement(element, id);
+      case "line":
+        return this.generateLineElement(element, id);
+      case "text":
+        return this.generateTextElement(element, id);
+      default:
+        console.warn(`Unknown element type: ${element.type}`);
+        return "";
+    }
+  }
+
+  private generateCircleElement(element: any, id: string): string {
+    const { x, y, radius, fill, stroke, strokeWidth } = element;
+    let attributes = `cx="${this.limitPrecision(x)}" cy="${this.limitPrecision(y)}" r="${this.limitPrecision(radius)}"`;
+
+    if (fill) attributes += ` fill="${fill}"`;
+    if (stroke) attributes += ` stroke="${stroke}"`;
+    if (strokeWidth && strokeWidth >= 1)
+      attributes += ` stroke-width="${strokeWidth}"`;
+
+    return `<circle ${attributes} id="${id}"/>`;
+  }
+
+  private generateRectangleElement(element: any, id: string): string {
+    const { x, y, width, height, rx, fill, stroke, strokeWidth } = element;
+    let attributes = `x="${this.limitPrecision(x)}" y="${this.limitPrecision(y)}" width="${this.limitPrecision(width)}" height="${this.limitPrecision(height)}"`;
+
+    if (rx) attributes += ` rx="${this.limitPrecision(rx)}"`;
+    if (fill) attributes += ` fill="${fill}"`;
+    if (stroke) attributes += ` stroke="${stroke}"`;
+    if (strokeWidth && strokeWidth >= 1)
+      attributes += ` stroke-width="${strokeWidth}"`;
+
+    return `<rect ${attributes} id="${id}"/>`;
+  }
+
+  private generatePolygonElement(element: any, id: string): string {
+    const { points, fill, stroke, strokeWidth } = element;
+
+    if (!Array.isArray(points) || points.length < 3) {
+      console.warn("Invalid polygon points");
+      return "";
+    }
+
+    const pointsStr = points
+      .map(
+        (point: any) =>
+          `${this.limitPrecision(point[0])},${this.limitPrecision(point[1])}`
+      )
+      .join(" ");
+
+    let attributes = `points="${pointsStr}"`;
+    if (fill) attributes += ` fill="${fill}"`;
+    if (stroke) attributes += ` stroke="${stroke}"`;
+    if (strokeWidth && strokeWidth >= 1)
+      attributes += ` stroke-width="${strokeWidth}"`;
+
+    return `<polygon ${attributes} id="${id}"/>`;
+  }
+
+  private generatePathElement(element: any, id: string): string {
+    const { d, fill, stroke, strokeWidth } = element;
+
+    if (!d) {
+      console.warn("Path element missing d attribute");
+      return "";
+    }
+
+    let attributes = `d="${d}"`;
+    if (fill !== undefined) attributes += ` fill="${fill}"`;
+    if (stroke) attributes += ` stroke="${stroke}"`;
+    if (strokeWidth && strokeWidth >= 1)
+      attributes += ` stroke-width="${strokeWidth}"`;
+
+    return `<path ${attributes} id="${id}"/>`;
+  }
+
+  private generateEllipseElement(element: any, id: string): string {
+    const { cx, cy, rx, ry, fill, stroke, strokeWidth } = element;
+    let attributes = `cx="${this.limitPrecision(cx)}" cy="${this.limitPrecision(cy)}" rx="${this.limitPrecision(rx)}" ry="${this.limitPrecision(ry)}"`;
+
+    if (fill) attributes += ` fill="${fill}"`;
+    if (stroke) attributes += ` stroke="${stroke}"`;
+    if (strokeWidth && strokeWidth >= 1)
+      attributes += ` stroke-width="${strokeWidth}"`;
+
+    return `<ellipse ${attributes} id="${id}"/>`;
+  }
+
+  private generateLineElement(element: any, id: string): string {
+    const { x1, y1, x2, y2, stroke, strokeWidth } = element;
+    let attributes = `x1="${this.limitPrecision(x1)}" y1="${this.limitPrecision(y1)}" x2="${this.limitPrecision(x2)}" y2="${this.limitPrecision(y2)}"`;
+
+    attributes += ` stroke="${stroke || "#000000"}"`;
+    attributes += ` stroke-width="${strokeWidth && strokeWidth >= 1 ? strokeWidth : 1}"`;
+
+    return `<line ${attributes} id="${id}"/>`;
+  }
+
+  private generateTextElement(element: any, id: string): string {
+    const { x, y, content, fontSize, fill, fontFamily } = element;
+    let attributes = `x="${this.limitPrecision(x)}" y="${this.limitPrecision(y)}"`;
+
+    if (fontSize) attributes += ` font-size="${fontSize}"`;
+    if (fill) attributes += ` fill="${fill}"`;
+    if (fontFamily) attributes += ` font-family="${fontFamily}"`;
+
+    return `<text ${attributes} id="${id}">${content || ""}</text>`;
+  }
+
   private createSystemPrompt(
     size: { width: number; height: number },
     palette?: string[]
   ): string {
     const paletteText = palette
-      ? `Use these colors: ${palette.join(", ")}`
+      ? `Available colors: ${palette.join(", ")}`
       : "Use appropriate colors for the design";
 
-    return `You are an expert SVG generator. Create clean, valid SVG code based on user prompts.
+    return `You are an SVG Shape Planner. Output STRICT JSON that matches the provided JSON Schema.
 
-REQUIREMENTS:
-- Generate valid SVG markup with proper xmlns and viewBox attributes
-- Use viewBox="0 0 ${size.width} ${size.height}" and width="${size.width}" height="${size.height}"
-- ${paletteText}
-- Only use these SVG elements: svg, g, path, circle, rect, line, polyline, polygon, ellipse
-- NO script tags, foreignObject, image tags, or event handlers (onclick, onload, etc.)
-- Limit decimal precision to 2 places maximum
-- If using stroke, ensure stroke-width is >= 1
-- Add meaningful id attributes to main elements
-- Create clean, semantic SVG structure
+CANVAS: ${size.width}x${size.height}
+${paletteText}
 
-RESPONSE FORMAT:
-Return a JSON object with this structure:
+RULES:
+- Think in terms of basic primitives (rect, circle, ellipse, line, polyline, polygon, path, text)
+- All colors must be valid CSS color strings or "url(#gradientId)" for gradients
+- Prefer simple coordinates and whole numbers unless smoothness is required
+- Avoid excessive elements; keep it minimal and clean
+- Never include explanations or markdown—ONLY the JSON that validates
+- Ensure the composition fits within the width/height bounds
+
+JSON SCHEMA:
 {
-  "svg": "complete SVG markup string",
-  "warnings": ["any warnings about the generation"]
-}
-
-Focus on creating visually appealing, clean SVG graphics that match the user's description.`;
+  "type": "object",
+  "properties": {
+    "elements": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {"const": "rect"},
+              "id": {"type": "string"},
+              "x": {"type": "number"},
+              "y": {"type": "number"},
+              "width": {"type": "number"},
+              "height": {"type": "number"},
+              "rx": {"type": "number"},
+              "fill": {"type": "string"},
+              "stroke": {"type": "string"},
+              "strokeWidth": {"type": "number", "minimum": 1}
+            },
+            "required": ["type", "id", "x", "y", "width", "height"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {"const": "circle"},
+              "id": {"type": "string"},
+              "cx": {"type": "number"},
+              "cy": {"type": "number"},
+              "r": {"type": "number"},
+              "fill": {"type": "string"},
+              "stroke": {"type": "string"},
+              "strokeWidth": {"type": "number", "minimum": 1}
+            },
+            "required": ["type", "id", "cx", "cy", "r"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {"const": "polygon"},
+              "id": {"type": "string"},
+              "points": {"type": "string"},
+              "fill": {"type": "string"},
+              "stroke": {"type": "string"},
+              "strokeWidth": {"type": "number", "minimum": 1}
+            },
+            "required": ["type", "id", "points"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {"const": "path"},
+              "id": {"type": "string"},
+              "d": {"type": "string"},
+              "fill": {"type": "string"},
+              "stroke": {"type": "string"},
+              "strokeWidth": {"type": "number", "minimum": 1}
+            },
+            "required": ["type", "id", "d"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {"const": "ellipse"},
+              "id": {"type": "string"},
+              "cx": {"type": "number"},
+              "cy": {"type": "number"},
+              "rx": {"type": "number"},
+              "ry": {"type": "number"},
+              "fill": {"type": "string"},
+              "stroke": {"type": "string"},
+              "strokeWidth": {"type": "number", "minimum": 1}
+            },
+            "required": ["type", "id", "cx", "cy", "rx", "ry"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {"const": "line"},
+              "id": {"type": "string"},
+              "x1": {"type": "number"},
+              "y1": {"type": "number"},
+              "x2": {"type": "number"},
+              "y2": {"type": "number"},
+              "stroke": {"type": "string"},
+              "strokeWidth": {"type": "number", "minimum": 1}
+            },
+            "required": ["type", "id", "x1", "y1", "x2", "y2", "stroke"]
+          }
+        ]
+      }
+    },
+    "gradients": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "type": {"enum": ["linear", "radial"]},
+          "stops": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "offset": {"type": "string"},
+                "color": {"type": "string"}
+              },
+              "required": ["offset", "color"]
+            }
+          },
+          "x1": {"type": "string"},
+          "y1": {"type": "string"},
+          "x2": {"type": "string"},
+          "y2": {"type": "string"}
+        },
+        "required": ["id", "type", "stops"]
+      }
+    }
+  },
+  "required": ["elements"]
+}`;
   }
 
   private createUserPrompt(prompt: string, seed: number): string {
-    return `Create an SVG based on this description: "${prompt}"
+    return `Analyze this design request and return a JSON structure describing the SVG elements: "${prompt}"
 
-Use seed ${seed} for any randomization to ensure consistent results.
+ANALYSIS REQUIREMENTS:
+- Break down the prompt into specific visual elements
+- Determine appropriate shapes, positions, sizes, and colors
+- Consider composition and visual hierarchy
+- Use seed ${seed} for any randomization decisions
+- Think about how to best represent the concept visually
 
-Generate clean, professional SVG code that accurately represents the requested design.`;
+EXAMPLES:
+- "red star" → single star polygon element
+- "blue house with yellow door" → rectangle for house, triangle for roof, smaller rectangle for door
+- "abstract geometric pattern" → multiple shapes with interesting arrangements
+- "flower with petals" → central circle + multiple ellipses arranged radially
+
+Focus on creating a clear, structured representation that captures the essence of the request.`;
   }
 
   private async fallbackToRuleBased(

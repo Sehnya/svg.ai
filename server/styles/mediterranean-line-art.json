@@ -1,0 +1,125 @@
+{
+  "name": "Mediterranean Line Art",
+  "description": "Clean line art inspired by Mediterranean architecture and motifs",
+  "constraints": {
+    "fillMode": "stroke-only",
+    "background": "transparent",
+    "lineWeights": [1, 2, 3, 4],
+    "strokeLinecap": "round",
+    "strokeLinejoin": "round",
+    "maxElements": 15
+  },
+  "palette": {
+    "primary": ["#2E8B57", "#4682B4", "#D2691E"],
+    "accent": ["#F4A460", "#DEB887", "#CD853F"],
+    "neutral": ["#696969", "#2F4F4F", "#708090"]
+  },
+  "motifs": {
+    "arch": {
+      "description": "Mediterranean arch shape",
+      "elements": [
+        {
+          "type": "path",
+          "d": "M {x} {y+h} Q {x+w/2} {y} {x+w} {y+h}",
+          "stroke": "{color}",
+          "fill": "none"
+        }
+      ]
+    },
+    "olive_branch": {
+      "description": "Stylized olive branch",
+      "elements": [
+        {
+          "type": "path",
+          "d": "M {x} {y} Q {x+w/3} {y-h/4} {x+w/2} {y} Q {x+2*w/3} {y+h/4} {x+w} {y}",
+          "stroke": "{color}",
+          "fill": "none"
+        },
+        {
+          "type": "ellipse",
+          "cx": "{x+w/4}",
+          "cy": "{y-h/8}",
+          "rx": "3",
+          "ry": "6",
+          "fill": "{color}"
+        },
+        {
+          "type": "ellipse",
+          "cx": "{x+3*w/4}",
+          "cy": "{y+h/8}",
+          "rx": "3",
+          "ry": "6",
+          "fill": "{color}"
+        }
+      ]
+    },
+    "greek_key": {
+      "description": "Greek key pattern element",
+      "elements": [
+        {
+          "type": "path",
+          "d": "M {x} {y} L {x+w} {y} L {x+w} {y+h/3} L {x+w/3} {y+h/3} L {x+w/3} {y+2*h/3} L {x+w} {y+2*h/3} L {x+w} {y+h} L {x} {y+h} Z",
+          "stroke": "{color}",
+          "fill": "none"
+        }
+      ]
+    },
+    "wave": {
+      "description": "Mediterranean wave pattern",
+      "elements": [
+        {
+          "type": "path",
+          "d": "M {x} {y+h/2} Q {x+w/4} {y} {x+w/2} {y+h/2} Q {x+3*w/4} {y+h} {x+w} {y+h/2}",
+          "stroke": "{color}",
+          "fill": "none"
+        }
+      ]
+    },
+    "column": {
+      "description": "Classical column",
+      "elements": [
+        {
+          "type": "rect",
+          "x": "{x+w/2-w/8}",
+          "y": "{y+h/6}",
+          "width": "{w/4}",
+          "height": "{2*h/3}",
+          "stroke": "{color}",
+          "fill": "none"
+        },
+        {
+          "type": "rect",
+          "x": "{x}",
+          "y": "{y}",
+          "width": "{w}",
+          "height": "{h/6}",
+          "stroke": "{color}",
+          "fill": "none"
+        },
+        {
+          "type": "rect",
+          "x": "{x}",
+          "y": "{y+5*h/6}",
+          "width": "{w}",
+          "height": "{h/6}",
+          "stroke": "{color}",
+          "fill": "none"
+        }
+      ]
+    }
+  },
+  "dos": [
+    "Use clean, flowing lines",
+    "Emphasize architectural elements",
+    "Create balanced compositions",
+    "Use consistent line weights",
+    "Include Mediterranean motifs when appropriate"
+  ],
+  "donts": [
+    "Don't use fills (stroke-only style)",
+    "Don't create cluttered compositions",
+    "Don't use harsh angles without purpose",
+    "Don't mix too many line weights",
+    "Don't ignore the Mediterranean aesthetic"
+  ]
+}

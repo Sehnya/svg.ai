@@ -231,6 +231,10 @@ export function useErrorHandler() {
     toast.info(title, message);
   };
 
+  const showError = (title: string, message?: string) => {
+    toast.error(title, message);
+  };
+
   return {
     logError,
     handleAPIError,
@@ -241,5 +245,6 @@ export function useErrorHandler() {
     showSuccess,
     showWarning,
     showInfo,
+    showError,
   };
 }

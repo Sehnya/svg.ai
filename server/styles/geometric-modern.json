@@ -1,0 +1,80 @@
+{
+  "name": "Geometric Modern",
+  "description": "Clean geometric shapes with modern color palettes",
+  "constraints": {
+    "fillMode": "fill-primary",
+    "background": "solid",
+    "lineWeights": [0, 2, 4],
+    "strokeLinecap": "square",
+    "strokeLinejoin": "miter",
+    "maxElements": 8
+  },
+  "palette": {
+    "primary": ["#FF6B6B", "#4ECDC4", "#45B7D1"],
+    "accent": ["#96CEB4", "#FFEAA7", "#DDA0DD"],
+    "neutral": ["#2D3436", "#636E72", "#B2BEC3"]
+  },
+  "motifs": {
+    "hexagon_grid": {
+      "description": "Hexagonal grid pattern",
+      "elements": [
+        {
+          "type": "polygon",
+          "points": "{hexPoints}",
+          "stroke": "{color}",
+          "fill": "none"
+        }
+      ]
+    },
+    "triangle_cluster": {
+      "description": "Cluster of triangles",
+      "elements": [
+        {
+          "type": "polygon",
+          "points": "{x},{y} {x+w/2},{y+h} {x+w},{y}",
+          "fill": "{color}"
+        },
+        {
+          "type": "polygon",
+          "points": "{x+w/4},{y+h/2} {x+3*w/4},{y+h/2} {x+w/2},{y+h}",
+          "fill": "{accent}"
+        }
+      ]
+    },
+    "circle_pattern": {
+      "description": "Overlapping circles",
+      "elements": [
+        {
+          "type": "circle",
+          "cx": "{x}",
+          "cy": "{y}",
+          "r": "{r}",
+          "fill": "{color}",
+          "opacity": "0.7"
+        },
+        {
+          "type": "circle",
+          "cx": "{x+r}",
+          "cy": "{y}",
+          "r": "{r}",
+          "fill": "{accent}",
+          "opacity": "0.7"
+        }
+      ]
+    }
+  },
+  "dos": [
+    "Use bold, geometric shapes",
+    "Create strong contrast",
+    "Align elements to grid",
+    "Use consistent spacing",
+    "Emphasize clean lines"
+  ],
+  "donts": [
+    "Don't use organic curves",
+    "Don't create uneven spacing",
+    "Don't use more than 3 colors",
+    "Don't add unnecessary details",
+    "Don't break the grid system"
+  ]
+}

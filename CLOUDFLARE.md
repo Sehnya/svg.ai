@@ -18,6 +18,26 @@ This guide covers deploying the SVG AI Code Generator using Cloudflare services.
 
 ---
 
+## 🌐 Quick CNAME Domain Setup
+
+**Want to use your own domain like `svg-ai.yourdomain.com`?**
+
+```bash
+# One command setup for CNAME domain
+npm run setup:cname
+```
+
+This will:
+
+- Configure your environment for a custom domain
+- Deploy to Cloudflare Pages
+- Give you step-by-step DNS instructions
+- Set up SSL automatically
+
+**Example:** If you own `example.com`, you can have your app at `svg-ai.example.com`
+
+---
+
 ## 🚀 Option 1: Full Cloudflare (Pages + Workers)
 
 ### Step 1: Deploy Frontend to Cloudflare Pages

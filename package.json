@@ -28,7 +28,13 @@
     "docker:stop": "docker stop svg-ai-prod && docker rm svg-ai-prod",
     "configure": "./scripts/configure-production.sh",
     "configure:cloudflare": "./scripts/configure-cloudflare.sh",
-    "deploy:cloudflare": "./scripts/deploy-cloudflare.sh"
+    "deploy:cloudflare": "./scripts/deploy-cloudflare.sh",
+    "setup:cname": "./scripts/setup-cname-domain.sh",
+    "deploy:pages": "./scripts/deploy-pages-simple.sh",
+    "deploy:functions": "./scripts/deploy-with-functions.sh",
+    "deploy:simple": "./scripts/deploy-simple-pages.sh",
+    "deploy:clean": "./scripts/deploy-clean.sh",
+    "deploy:enhanced": "./scripts/deploy-enhanced.sh"
   },
   "devDependencies": {
     "@types/jsdom": "^21.1.7",

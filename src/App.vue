@@ -233,49 +233,97 @@
         <!-- Right Panel - Preview and Output -->
         <div class="space-y-6">
           <!-- SVG Preview -->
-          <div class="bg-white rounded-lg shadow p-6">
-            <h2 class="text-lg font-medium text-gray-900 mb-4">Preview</h2>
+          <SVGPreview
+            :svg-content="generationResult?.svg || ''"
+            :metadata="generationResult?.meta"
+            :loading="isGenerating"
+            :error="error || undefined"
+            @copy="handleCopy"
+            @download="handleDownload"
+          />
 
-            <div v-if="generationResult" class="space-y-4">
-              <!-- SVG Display -->
-              <div
-                class="border border-gray-200 rounded-lg p-4 bg-gray-50 min-h-[200px] flex items-center justify-center"
-              >
-                <div
-                  v-html="generationResult.svg"
-                  class="max-w-full max-h-full"
-                ></div>
+          <!-- Code Output -->
+          <CodeOutput
+            v-if="generationResult?.svg"
+            :svg-code="generationResult.svg"
+            title="SVG Code"
+            :show-format-selector="true"
+            :show-download-button="true"
+            :show-footer="true"
+            :filename="getFilename()"
+            @copy="handleCodeCopy"
+            @download="handleCodeDownload"
+            @format-change="handleFormatChange"
+            @error="handleCodeError"
+          />
+
+          <!-- Metadata Display -->
+          <MetadataDisplay
+            v-if="generationResult?.meta"
+            :metadata="generationResult.meta"
+            :layers="generationResult.layers"
+            :statistics="svgStatistics || undefined"
+            title="SVG Information"
+            :collapsible="true"
+            :show-statistics="true"
+          />
+
+          <!-- Layer Inspector -->
+          <LayerInspector
+            v-if="
+              generationResult?.layers && generationResult.layers.length > 0
+            "
+            :layers="generationResult.layers"
+            title="Layer Inspector"
+            :show-details="true"
+            :default-expanded="false"
+            @select-layer="handleLayerSelect"
+            @copy-id="handleLayerIdCopy"
+          />
+
+          <!-- Warnings Display -->
+          <div
+            v-if="
+              generationResult?.warnings && generationResult.warnings.length > 0
+            "
+            class="bg-yellow-50 border border-yellow-200 rounded-lg p-4"
+          >
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg
+                  class="h-5 w-5 text-yellow-400"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
               </div>
-
-              <!-- Metadata -->
-              <div v-if="generationResult.meta" class="text-sm text-gray-600">
-                <div class="grid grid-cols-2 gap-4">
-                  <div>
-                    <span class="font-medium">Size:</span>
-                    {{ generationResult.meta.width }}×{{
-                      generationResult.meta.height
-                    }}
-                  </div>
-                  <div>
-                    <span class="font-medium">Seed:</span>
-                    {{ generationResult.meta.seed }}
-                  </div>
+              <div class="ml-3">
+                <h3 class="text-sm font-medium text-yellow-800">Warnings</h3>
+                <div class="mt-2 text-sm text-yellow-700">
+                  <ul class="list-disc list-inside space-y-1">
+                    <li
+                      v-for="warning in generationResult.warnings"
+                      :key="warning"
+                    >
+                      {{ warning }}
+                    </li>
+                  </ul>
                 </div>
               </div>
-
-              <!-- Copy Button -->
-              <button
-                @click="copySVGCode"
-                class="w-full bg-gray-100 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-              >
-                {{ copyButtonText }}
-              </button>
             </div>
+          </div>
 
-            <div
-              v-else-if="!isGenerating"
-              class="text-center text-gray-500 py-12"
-            >
+          <!-- Empty State -->
+          <div
+            v-if="!generationResult && !isGenerating"
+            class="bg-white rounded-lg shadow p-6"
+          >
+            <div class="text-center text-gray-500 py-12">
               <svg
                 class="mx-auto h-12 w-12 text-gray-400"
                 stroke="currentColor"
@@ -292,30 +340,6 @@
               <p class="mt-2">
                 Enter a prompt and click "Generate SVG" to see your creation
               </p>
-            </div>
-
-            <div v-else class="text-center text-gray-500 py-12">
-              <svg
-                class="animate-spin mx-auto h-8 w-8 text-gray-400"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  class="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  stroke-width="4"
-                ></circle>
-                <path
-                  class="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
-              <p class="mt-2">Generating your SVG...</p>
             </div>
           </div>
         </div>
@@ -338,10 +362,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { useGeneration } from "./composables/useGeneration";
 import { useErrorHandler } from "./composables/useErrorHandler";
 import ToastContainer from "./components/ToastContainer.vue";
+import SVGPreview from "./components/SVGPreview.vue";
+import CodeOutput from "./components/CodeOutput.vue";
+import MetadataDisplay from "./components/MetadataDisplay.vue";
+import LayerInspector from "./components/LayerInspector.vue";
 
 // Use generation composable
 const {
@@ -361,27 +389,82 @@ const {
 
 const errorHandler = useErrorHandler();
 const globalError = ref<string | null>(null);
-const copyButtonText = ref("Copy SVG Code");
+const selectedLayer = ref<string | null>(null);
+const currentFormat = ref<string>("svg");
+
+// Computed properties
+const svgStatistics = computed(() => {
+  if (!generationResult.value?.layers) return null;
+
+  const layers = generationResult.value.layers;
+  const elementCount = layers.length;
+  const hasGroups = layers.some((layer) => layer.type === "group");
+  const hasText = layers.some((layer) => layer.type === "text");
+  const colorCount = generationResult.value.meta?.palette?.length || 0;
+
+  let complexity: "simple" | "moderate" | "complex" = "simple";
+  if (elementCount > 10 || hasGroups) complexity = "moderate";
+  if (elementCount > 20 || (hasGroups && hasText)) complexity = "complex";
+
+  return {
+    elementCount,
+    hasGroups,
+    hasText,
+    colorCount,
+    complexity,
+  };
+});
 
 // Methods
+const getFilename = (): string => {
+  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, "");
+  return `svg-ai-${timestamp}`;
+};
 
-const copySVGCode = async () => {
-  if (!generationResult.value?.svg) return;
+const handleCopy = () => {
+  errorHandler.showSuccess("Copied!", "SVG copied to clipboard");
+};
 
-  try {
-    await navigator.clipboard.writeText(generationResult.value.svg);
-    copyButtonText.value = "Copied!";
-    errorHandler.showSuccess("Copied!", "SVG code copied to clipboard");
-    setTimeout(() => {
-      copyButtonText.value = "Copy SVG Code";
-    }, 2000);
-  } catch (error) {
-    console.error("Copy failed:", error);
-    errorHandler.handleCopyError(
-      error instanceof Error ? error : new Error("Copy failed"),
-      { component: "App", action: "copySVGCode" }
-    );
-  }
+const handleDownload = () => {
+  errorHandler.showSuccess("Downloaded!", "SVG file downloaded successfully");
+};
+
+const handleCodeCopy = (_code: string, format: string) => {
+  errorHandler.showSuccess(
+    "Copied!",
+    `${format.toUpperCase()} code copied to clipboard`
+  );
+};
+
+const handleCodeDownload = (
+  _code: string,
+  _format: string,
+  filename: string
+) => {
+  errorHandler.showSuccess(
+    "Downloaded!",
+    `${filename} downloaded successfully`
+  );
+};
+
+const handleFormatChange = (format: string) => {
+  currentFormat.value = format;
+};
+
+const handleCodeError = (error: string) => {
+  errorHandler.showError("Error", error);
+};
+
+const handleLayerSelect = (layerId: string) => {
+  selectedLayer.value = layerId;
+  // Could highlight the layer in the preview here
+};
+
+const handleLayerIdCopy = (layerId: string) => {
+  errorHandler.showSuccess(
+    "Copied!",
+    `Layer ID "${layerId}" copied to clipboard`
+  );
 };
 
 const clearGlobalError = () => {

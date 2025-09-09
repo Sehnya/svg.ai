@@ -64,7 +64,14 @@ case $DEPLOYMENT_TYPE in
         
         # Deploy to Cloudflare Pages
         print_info "Deploying frontend to Cloudflare Pages..."
-        wrangler pages deploy dist --project-name=svg-ai --compatibility-date=2024-01-01
+        
+        # Check if project exists, create if not
+        if ! wrangler pages project list | grep -q "svg-ai"; then
+            print_info "Creating Cloudflare Pages project..."
+            wrangler pages project create svg-ai --production-branch=main
+        fi
+        
+        wrangler pages deploy dist --project-name=svg-ai
         
         # Create Worker if it doesn't exist
         if [ ! -f "server/worker.ts" ]; then
@@ -169,7 +176,14 @@ EOF
         
         # Deploy to Cloudflare Pages
         print_info "Deploying to Cloudflare Pages..."
-        wrangler pages deploy dist --project-name=svg-ai --compatibility-date=2024-01-01
+        
+        # Check if project exists, create if not
+        if ! wrangler pages project list | grep -q "svg-ai"; then
+            print_info "Creating Cloudflare Pages project..."
+            wrangler pages project create svg-ai --production-branch=main
+        fi
+        
+        wrangler pages deploy dist --project-name=svg-ai
         
         print_success "✅ Frontend deployed to Cloudflare Pages!"
         print_info "🌐 Frontend: https://svg-ai.pages.dev"

@@ -108,6 +108,7 @@ export class RuleBasedGenerator extends SVGGenerator {
 
   private initializeTemplates(): ShapeTemplate[] {
     return [
+      // Basic shapes
       {
         name: "circle",
         keywords: ["circle", "round", "ball", "dot", "ring"],
@@ -122,27 +123,107 @@ export class RuleBasedGenerator extends SVGGenerator {
       },
       {
         name: "triangle",
-        keywords: ["triangle", "arrow", "point", "peak"],
+        keywords: ["triangle", "point", "peak"],
         generator: (width, height, colors, seed) =>
           this.generateTriangle(width, height, colors, seed),
       },
+
+      // Polygonal shapes
       {
         name: "star",
-        keywords: ["star", "asterisk", "sparkle"],
+        keywords: ["star", "asterisk", "sparkle", "pentagram"],
         generator: (width, height, colors, seed) =>
           this.generateStar(width, height, colors, seed),
       },
       {
-        name: "icon",
-        keywords: ["icon", "symbol", "logo", "badge"],
+        name: "hexagon",
+        keywords: ["hexagon", "hex", "honeycomb"],
         generator: (width, height, colors, seed) =>
-          this.generateIcon(width, height, colors, seed),
+          this.generateHexagon(width, height, colors, seed),
+      },
+      {
+        name: "pentagon",
+        keywords: ["pentagon", "penta"],
+        generator: (width, height, colors, seed) =>
+          this.generatePentagon(width, height, colors, seed),
+      },
+      {
+        name: "octagon",
+        keywords: ["octagon", "octa", "stop"],
+        generator: (width, height, colors, seed) =>
+          this.generateOctagon(width, height, colors, seed),
+      },
+      {
+        name: "diamond",
+        keywords: ["diamond", "rhombus", "gem", "crystal"],
+        generator: (width, height, colors, seed) =>
+          this.generateDiamond(width, height, colors, seed),
+      },
+
+      // Freeform shapes
+      {
+        name: "heart",
+        keywords: ["heart", "love", "valentine"],
+        generator: (width, height, colors, seed) =>
+          this.generateHeart(width, height, colors, seed),
+      },
+      {
+        name: "wave",
+        keywords: ["wave", "curve", "wavy", "sine"],
+        generator: (width, height, colors, seed) =>
+          this.generateWave(width, height, colors, seed),
+      },
+      {
+        name: "spiral",
+        keywords: ["spiral", "swirl", "coil"],
+        generator: (width, height, colors, seed) =>
+          this.generateSpiral(width, height, colors, seed),
+      },
+      {
+        name: "arrow",
+        keywords: ["arrow", "pointer", "direction"],
+        generator: (width, height, colors, seed) =>
+          this.generateArrow(width, height, colors, seed),
+      },
+
+      // Organic shapes
+      {
+        name: "flower",
+        keywords: ["flower", "petal", "bloom", "blossom"],
+        generator: (width, height, colors, seed) =>
+          this.generateFlower(width, height, colors, seed),
+      },
+      {
+        name: "leaf",
+        keywords: ["leaf", "foliage", "plant"],
+        generator: (width, height, colors, seed) =>
+          this.generateLeaf(width, height, colors, seed),
+      },
+      {
+        name: "tree",
+        keywords: ["tree", "trunk", "branch"],
+        generator: (width, height, colors, seed) =>
+          this.generateTree(width, height, colors, seed),
+      },
+
+      // Complex patterns
+      {
+        name: "mandala",
+        keywords: ["mandala", "circular", "radial", "symmetric"],
+        generator: (width, height, colors, seed) =>
+          this.generateMandala(width, height, colors, seed),
       },
       {
         name: "pattern",
         keywords: ["pattern", "grid", "lines", "stripes", "dots"],
         generator: (width, height, colors, seed) =>
           this.generatePattern(width, height, colors, seed),
+      },
+      {
+        name: "icon",
+        keywords: ["icon", "symbol", "logo", "badge"],
+        generator: (width, height, colors, seed) =>
+          this.generateIcon(width, height, colors, seed),
       },
     ];
   }

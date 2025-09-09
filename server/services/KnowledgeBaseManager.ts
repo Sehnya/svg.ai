@@ -193,12 +193,24 @@ export class KnowledgeBaseManager {
     const id = this.generateObjectId(object.kind, object.title);
     const version = object.version || "1.0.0";
 
+    // Generate embedding if service is available
+    let embedding: number[] | null = null;
+    if (this.embeddingService) {
+      try {
+        embedding =
+          await this.embeddingService.generateEmbeddingForKBObject(object);
+      } catch (error) {
+        console.warn("Failed to generate embedding for KB object:", error);
+      }
+    }
+
     const newObject: NewKBObject = {
       ...object,
       id,
       version,
       status: object.status || "experimental",
       qualityScore: "0",
+      embedding,
     };
 
     // Insert object
@@ -568,7 +580,9 @@ export class KnowledgeBaseManager {
           freshness,
         };
       })
-      .sort((a, b) => b.score - a.score);
+    );
+
+    return scoredObjects.sort((a, b) => b.score - a.score);
   }
 
   private selectGroundingSet(scored: ScoredObject[]): GroundingData {

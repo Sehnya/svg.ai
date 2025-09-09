@@ -1,7 +1,7 @@
 import { JSDOM } from "jsdom";
 import createDOMPurify from "isomorphic-dompurify";
 import type { SanitizationResult } from "../types";
-import { SVG_CONSTANTS } from "../../src/types";
+import { SVG_CONSTANTS } from "../types";
 
 export class SVGSanitizer {
   private purify: ReturnType<typeof createDOMPurify>;

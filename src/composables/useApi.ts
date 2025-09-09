@@ -1,10 +1,5 @@
 import { ref, computed } from "vue";
-import {
-  apiService,
-  APIError,
-  NetworkError,
-  TimeoutError,
-} from "../services/api";
+import { apiService } from "../services/api";
 import { useErrorHandler } from "./useErrorHandler";
 import type { GenerationRequest, GenerationResponse } from "../types/api";
 

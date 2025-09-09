@@ -8,6 +8,8 @@ import { useApi } from "./useApi";
 import { useErrorHandler } from "./useErrorHandler";
 import { useFormValidation } from "./useFormValidation";
 import { InputSanitizer } from "../utils/inputSanitizer";
+import { debounce } from "../utils/debounce";
+import { performanceMonitor } from "../utils/performance";
 
 export function useGeneration() {
   // Use API composable for network operations
@@ -70,32 +72,36 @@ export function useGeneration() {
   validation.registerField("width", { isValid: true });
   validation.registerField("height", { isValid: true });
 
-  // Watch for prompt changes and sanitize input
-  watch(
-    () => generationParams.prompt,
-    (newPrompt) => {
-      if (newPrompt) {
-        const sanitizationResult = InputSanitizer.sanitizePrompt(newPrompt);
+  // Debounced input sanitization to avoid excessive processing
+  const debouncedSanitization = debounce((newPrompt: string) => {
+    if (newPrompt) {
+      performanceMonitor.start("input-sanitization");
 
-        if (sanitizationResult.wasModified) {
-          generationParams.prompt = sanitizationResult.sanitized;
+      const sanitizationResult = InputSanitizer.sanitizePrompt(newPrompt);
 
-          // Show warnings for sanitization
-          sanitizationResult.warnings.forEach((warning) => {
-            errorHandler.showWarning("Input Modified", warning);
-          });
-        }
+      if (sanitizationResult.wasModified) {
+        generationParams.prompt = sanitizationResult.sanitized;
 
-        // Check for suspicious input
-        if (InputSanitizer.isSuspiciousInput(newPrompt)) {
-          errorHandler.showWarning(
-            "Suspicious Input Detected",
-            "Your input contains potentially unsafe content that has been removed."
-          );
-        }
+        // Show warnings for sanitization
+        sanitizationResult.warnings.forEach((warning) => {
+          errorHandler.showWarning("Input Modified", warning);
+        });
       }
+
+      // Check for suspicious input
+      if (InputSanitizer.isSuspiciousInput(newPrompt)) {
+        errorHandler.showWarning(
+          "Suspicious Input Detected",
+          "Your input contains potentially unsafe content that has been removed."
+        );
+      }
+
+      performanceMonitor.end("input-sanitization");
     }
-  );
+  }, 300); // 300ms debounce
+
+  // Watch for prompt changes and sanitize input
+  watch(() => generationParams.prompt, debouncedSanitization);
 
   const validateInput = () => {
     // Sanitize and validate prompt
@@ -163,29 +169,45 @@ export function useGeneration() {
   };
 
   const generateSVG = async () => {
-    if (!validateInput()) {
-      errorHandler.handleValidationErrors(validation.validationErrors.value, {
-        component: "useGeneration",
-        action: "generateSVG",
-      });
-      return;
-    }
+    performanceMonitor.start("svg-generation", {
+      promptLength: generationParams.prompt.length,
+      size: `${generationParams.size.width}x${generationParams.size.height}`,
+    });
 
-    if (!canGenerate.value) return;
+    try {
+      if (!validateInput()) {
+        errorHandler.handleValidationErrors(validation.validationErrors.value, {
+          component: "useGeneration",
+          action: "generateSVG",
+        });
+        return;
+      }
 
-    const request: GenerationRequest = {
-      prompt: generationParams.prompt.trim(),
-      size: {
-        width: generationParams.size.width,
-        height: generationParams.size.height,
-      },
-      palette: generationParams.palette,
-      seed: generationParams.seed,
-    };
+      if (!canGenerate.value) return;
 
-    const result = await api.generateSVG(request);
-    if (result) {
-      generationResult.value = result;
+      const request: GenerationRequest = {
+        prompt: generationParams.prompt.trim(),
+        size: {
+          width: generationParams.size.width,
+          height: generationParams.size.height,
+        },
+        palette: generationParams.palette,
+        seed: generationParams.seed,
+      };
+
+      const result = await api.generateSVG(request);
+      if (result) {
+        generationResult.value = result;
+
+        // Log performance metrics in development
+        if (process.env.NODE_ENV === "development") {
+          const duration = performanceMonitor.end("svg-generation");
+          console.log(`SVG generation completed in ${duration?.toFixed(2)}ms`);
+        }
+      }
+    } catch (error) {
+      performanceMonitor.end("svg-generation");
+      throw error;
     }
   };
 

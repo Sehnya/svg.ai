@@ -9,6 +9,7 @@ import { SVGGenerator } from "./services/SVGGenerator";
 import { RuleBasedGenerator } from "./services/RuleBasedGenerator";
 import { OpenAIGenerator } from "./services/OpenAIGenerator";
 import { SecurityTester } from "./utils/securityTester";
+import { ResponseCache } from "./utils/cache";
 
 const app = new OpenAPIHono();
 
@@ -186,6 +187,12 @@ app.onError((err, c) => {
 const ruleBasedGenerator = new RuleBasedGenerator();
 let openaiGenerator: OpenAIGenerator | null = null;
 
+// Initialize cache
+const responseCache = new ResponseCache(
+  parseInt(process.env.CACHE_MAX_SIZE || "1000"),
+  parseInt(process.env.CACHE_TTL_MINUTES || "60")
+);
+
 // Initialize OpenAI generator if API key is available
 try {
   if (process.env.OPENAI_API_KEY) {
@@ -256,6 +263,15 @@ app.openapi(generateSVGRoute, async (c) => {
   try {
     const request = c.req.valid("json");
 
+    // Check cache first
+    const cachedResult = responseCache.get(request);
+    if (cachedResult) {
+      // Add cache hit indicator
+      const result = { ...cachedResult };
+      result.warnings = [...result.warnings, "Response served from cache"];
+      return c.json(result, 200);
+    }
+
     // Choose generator based on model parameter
     let generator: SVGGenerator = ruleBasedGenerator;
     if (request.model === "llm") {
@@ -267,6 +283,10 @@ app.openapi(generateSVGRoute, async (c) => {
         result.warnings.push(
           "LLM generation not available - using rule-based fallback"
         );
+
+        // Cache the result
+        responseCache.set(request, result);
+
         return c.json(result, 200);
       }
     }
@@ -284,6 +304,11 @@ app.openapi(generateSVGRoute, async (c) => {
       );
     }
 
+    // Cache successful results
+    if (result.errors.length === 0) {
+      responseCache.set(request, result);
+    }
+
     return c.json(result, 200);
   } catch (error) {
     console.error("Generation error:", error);
@@ -296,6 +321,27 @@ app.openapi(generateSVGRoute, async (c) => {
     );
   }
 });
+
+// Cache management endpoints (development only)
+if (process.env.NODE_ENV !== "production") {
+  app.get("/cache/stats", (c) => {
+    const stats = responseCache.getStats();
+    return c.json(stats);
+  });
+
+  app.post("/cache/clear", (c) => {
+    responseCache.clear();
+    return c.json({ message: "Cache cleared successfully" });
+  });
+
+  app.get("/cache/entries", (c) => {
+    const entries = responseCache.getEntries();
+    return c.json({
+      count: entries.length,
+      entries: entries.slice(0, 10), // Limit to first 10 for performance
+    });
+  });
+}
 
 // OpenAPI documentation
 app.doc("/openapi.json", {

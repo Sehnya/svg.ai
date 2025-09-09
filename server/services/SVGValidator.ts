@@ -1,6 +1,6 @@
 import { JSDOM } from "jsdom";
 import type { ValidationResult } from "../types";
-import { SVG_CONSTANTS } from "../../src/types";
+import { SVG_CONSTANTS } from "../types";
 
 export class SVGValidator {
   validateSVGStructure(svgString: string): ValidationResult {

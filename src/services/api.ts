@@ -1,7 +1,8 @@
 import type { GenerationRequest, GenerationResponse } from "../types/api";
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.PROD ? "" : "http://localhost:3001");
 
 export class APIError extends Error {
   constructor(
@@ -51,11 +52,14 @@ export class APIService {
     maxRetries: 3,
     baseDelay: 1000,
     maxDelay: 10000,
-    retryCondition: (error) =>
-      error instanceof NetworkError ||
-      (error instanceof APIError &&
-        error.statusCode &&
-        error.statusCode >= 500),
+    retryCondition: (error) => {
+      return (
+        error instanceof NetworkError ||
+        (error instanceof APIError &&
+          error.statusCode !== undefined &&
+          error.statusCode >= 500)
+      );
+    },
   };
   private isOnline: boolean = navigator.onLine;
 
@@ -153,7 +157,7 @@ export class APIService {
     // Apply request interceptors
     const processedOptions = await this.applyRequestInterceptors(options);
 
-    let lastError: Error;
+    let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= this.retryConfig.maxRetries; attempt++) {
       try {
@@ -184,11 +188,15 @@ export class APIService {
     }
 
     // Convert fetch errors to our custom error types
-    if (lastError instanceof TypeError && lastError.message.includes("fetch")) {
+    if (
+      lastError &&
+      lastError instanceof TypeError &&
+      lastError.message.includes("fetch")
+    ) {
       throw new NetworkError("Network error: Unable to connect to the server");
     }
 
-    throw lastError;
+    throw lastError || new Error("Unknown error occurred");
   }
 
   async generateSVG(request: GenerationRequest): Promise<GenerationResponse> {

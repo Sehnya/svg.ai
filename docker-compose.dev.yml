@@ -1,0 +1,47 @@
+version: "3.8"
+
+services:
+  # Development application service
+  svg-ai-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3001:3001"
+      - "5173:5173"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - VITE_API_BASE_URL=http://localhost:3001
+    volumes:
+      # Mount source code for hot reloading
+      - .:/app
+      - /app/node_modules
+    restart: unless-stopped
+    networks:
+      - svg-ai-dev-network
+    command: bun run dev:server
+
+  # Frontend development server
+  frontend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    environment:
+      - NODE_ENV=development
+      - VITE_API_BASE_URL=http://localhost:3001
+    volumes:
+      - .:/app
+      - /app/node_modules
+    restart: unless-stopped
+    networks:
+      - svg-ai-dev-network
+    command: bun run dev
+    depends_on:
+      - svg-ai-dev
+
+networks:
+  svg-ai-dev-network:
+    driver: bridge

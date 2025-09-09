@@ -1,0 +1,20 @@
+# Development Dockerfile with hot reloading
+FROM oven/bun:1
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package.json bun.lockb* ./
+
+# Install all dependencies (including dev dependencies)
+RUN bun install
+
+# Copy source code
+COPY . .
+
+# Expose ports for both frontend and backend
+EXPOSE 3001 5173
+
+# Default command (can be overridden in docker-compose)
+CMD ["bun", "run", "dev"]

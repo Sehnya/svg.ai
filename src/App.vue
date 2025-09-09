@@ -342,7 +342,6 @@ import { ref } from "vue";
 import { useGeneration } from "./composables/useGeneration";
 import { useErrorHandler } from "./composables/useErrorHandler";
 import ToastContainer from "./components/ToastContainer.vue";
-import ValidationErrors from "./components/ValidationErrors.vue";
 
 // Use generation composable
 const {

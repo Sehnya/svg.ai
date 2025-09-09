@@ -3,7 +3,7 @@ import type {
   GenerationResponse,
   ValidationResult,
 } from "../types";
-import { GenerationRequestSchema } from "../../src/types/validation";
+import { GenerationRequestSchema } from "../types";
 
 export abstract class SVGGenerator {
   abstract generate(request: GenerationRequest): Promise<GenerationResponse>;

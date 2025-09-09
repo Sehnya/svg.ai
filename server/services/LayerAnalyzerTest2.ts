@@ -1,5 +1,5 @@
 import { JSDOM } from "jsdom";
-import type { LayerInfo } from "../../src/types/api";
+import type { LayerInfo } from "../types";
 
 export class LayerAnalyzerTest2 {
   private dom: JSDOM;

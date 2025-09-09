@@ -55,7 +55,6 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
 import { useToast } from "../composables/useToast";
 
 // Icons (using simple SVG components)

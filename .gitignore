@@ -1,10 +1,19 @@
+# Environment files
 .env
+.env.local
+.env.development
+.env.production
+.env.*.local
+
+# IDE
 .idea
+
+# Build outputs
 dist
-node_modules
-coverage
 build
-public
-src
-test
-.env.*
+coverage
+
+# Dependencies
+node_modules
+
+# Note: Keep .env.example and .env.*.example files for templates

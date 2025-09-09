@@ -1,0 +1,40 @@
+{
+  "$schema": "https://peezy.dev/schemas/peezy.lock.schema.json",
+  "peezyVersion": "0.1.3",
+  "formatVersion": 1,
+  "project": {
+    "name": "svg-ai",
+    "createdAt": "2025-09-09T14:32:01.668Z"
+  },
+  "template": {
+    "name": "vite-vue-tailwind",
+    "version": "latest",
+    "source": {
+      "type": "local",
+      "path": "/Users/sehnya/Code 2.0/peezy/templates/vite-vue-tailwind"
+    },
+    "engine": "dir"
+  },
+  "options": {
+    "flags": {
+      "installDeps": true,
+      "initGit": true
+    },
+    "answers": {}
+  },
+  "checksums": {
+    "files": {
+      "README.md": "sha256-26127a26a24cb67f26700c7966a2c456ff7fbb090df6ccdc795b1888cf58cb2a",
+      "index.html": "sha256-d39f68ccd2d7d45ca8b96b38a7c3a76c5e807d7c9bcfbe78fff97742804e476a",
+      "package.json": "sha256-22b71ea58f577f7dc6536b65643526102bffb49a47423719149e2db656139fa6",
+      "postcss.config.js": "sha256-e32657baf631d7c5f4dc67b4b2ee0ec8e7d5b3c41860e09cddce7c0377cd80bc",
+      "src/App.vue": "sha256-081b311ca9fbb0ea9c3cc0e8eed2824a2e5bd0cde30102ecc3647e14db1fe9a3",
+      "src/main.ts": "sha256-9da168ee55f01dfe1f9850586790819659df9540143b8da7effe852e45db7a84",
+      "src/style.css": "sha256-cc1a7ad0d019ddb1d32d0ecb588ba0ac26ce41d8625dd6c366348b25f83a28ec",
+      "tailwind.config.js": "sha256-52ef90d1eb12c27f6b538e8eb82a4fba35e42f82f32d646efcb193a7c71b7b0a",
+      "tsconfig.json": "sha256-bbe2675309317500fbf379e07ba62ea2483c4b7fb4ede0ad0bdcb88ece3003d5",
+      "tsconfig.node.json": "sha256-bb9fd8592a9e364641441219f10d84daae9ba2ca5cc85db798efad6913bb8257",
+      "vite.config.ts": "sha256-de24feac0f30281260058a655af8b0f057301e84e49425bdcdd36e5d6bee7d5a"
+    }
+  }
+}

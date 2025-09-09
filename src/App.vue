@@ -1,32 +1,389 @@
 <template>
-  <main class="grid min-h-screen place-items-center p-8">
-    <section
-      class="max-w-xl rounded-2xl border border-white/10 bg-white/5 p-8 text-center"
-    >
-      <h1 class="text-3xl font-bold">svg-ai</h1>
-      <p class="mt-2 text-white/70">Scaffolded with peezy.</p>
-      <div class="mt-6 flex gap-4 justify-center">
-        <a
-          class="inline-block rounded-lg border border-white/20 px-4 py-2 transition-colors hover:bg-white/10"
-          href="https://vuejs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Vue Docs →
-        </a>
-        <a
-          class="inline-block rounded-lg border border-white/20 px-4 py-2 transition-colors hover:bg-white/10"
-          href="https://tailwindcss.com"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Tailwind Docs →
-        </a>
+  <div class="min-h-screen bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between items-center h-16">
+          <div class="flex items-center">
+            <h1 class="text-xl font-semibold text-gray-900">
+              SVG AI Generator
+            </h1>
+          </div>
+          <div class="flex items-center space-x-4">
+            <div class="text-sm text-gray-500">
+              AI-powered SVG generation with live preview
+            </div>
+            <div class="flex items-center space-x-2">
+              <div
+                :class="[
+                  'w-2 h-2 rounded-full',
+                  isOnline ? 'bg-green-400' : 'bg-red-400',
+                ]"
+              ></div>
+              <span class="text-xs text-gray-500">
+                {{ isOnline ? "Online" : "Offline" }}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
-    </section>
-  </main>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <!-- Offline Status -->
+      <div v-if="!isOnline" class="mb-6">
+        <div class="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+          <div class="flex">
+            <div class="flex-shrink-0">
+              <svg
+                class="h-5 w-5 text-yellow-400"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </div>
+            <div class="ml-3">
+              <h3 class="text-sm font-medium text-yellow-800">Offline</h3>
+              <div class="mt-2 text-sm text-yellow-700">
+                You're currently offline. SVG generation requires an internet
+                connection.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error Messages -->
+      <div v-if="error || globalError" class="mb-6">
+        <div class="bg-red-50 border border-red-200 rounded-md p-4">
+          <div class="flex">
+            <div class="flex-shrink-0">
+              <svg
+                class="h-5 w-5 text-red-400"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </div>
+            <div class="ml-3">
+              <h3 class="text-sm font-medium text-red-800">
+                {{ error ? "Generation Error" : "Application Error" }}
+              </h3>
+              <div class="mt-2 text-sm text-red-700">
+                {{ error || globalError }}
+              </div>
+              <div class="mt-4 space-x-2">
+                <button
+                  v-if="error"
+                  @click="clearError"
+                  class="bg-red-100 px-2 py-1 text-xs font-medium text-red-800 rounded hover:bg-red-200"
+                >
+                  Dismiss
+                </button>
+                <button
+                  v-if="globalError"
+                  @click="clearGlobalError"
+                  class="bg-red-100 px-2 py-1 text-xs font-medium text-red-800 rounded hover:bg-red-200"
+                >
+                  Dismiss
+                </button>
+                <button
+                  v-if="canRetry"
+                  @click="retryGeneration"
+                  class="bg-red-100 px-2 py-1 text-xs font-medium text-red-800 rounded hover:bg-red-200"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Application Layout -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Left Panel - Input Controls -->
+        <div class="space-y-6">
+          <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-medium text-gray-900 mb-4">Generate SVG</h2>
+
+            <!-- Prompt Input Section -->
+            <div class="space-y-4">
+              <div>
+                <label
+                  for="prompt"
+                  class="block text-sm font-medium text-gray-700 mb-2"
+                >
+                  Describe your SVG
+                </label>
+                <textarea
+                  id="prompt"
+                  v-model="generationParams.prompt"
+                  rows="3"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="e.g., A blue circle with a red border, or a simple house icon"
+                  :maxlength="500"
+                />
+                <div class="mt-1 text-xs text-gray-500">
+                  {{ generationParams.prompt.length }}/500 characters
+                </div>
+              </div>
+
+              <!-- Size Controls -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                  Size
+                </label>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                  <button
+                    v-for="preset in sizePresets"
+                    :key="preset.name"
+                    @click="setSizePreset(preset)"
+                    :class="[
+                      'px-3 py-2 text-xs font-medium rounded border',
+                      generationParams.size.preset === preset.name
+                        ? 'bg-blue-50 border-blue-200 text-blue-700'
+                        : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50',
+                    ]"
+                  >
+                    {{ preset.label }}
+                  </button>
+                </div>
+
+                <div
+                  v-if="generationParams.size.preset === 'custom'"
+                  class="grid grid-cols-2 gap-3"
+                >
+                  <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1"
+                      >Width</label
+                    >
+                    <input
+                      v-model.number="generationParams.size.width"
+                      type="number"
+                      min="16"
+                      max="2048"
+                      class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1"
+                      >Height</label
+                    >
+                    <input
+                      v-model.number="generationParams.size.height"
+                      type="number"
+                      min="16"
+                      max="2048"
+                      class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Generate Button -->
+              <button
+                @click="generateSVG"
+                :disabled="!canGenerate || isGenerating"
+                class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span
+                  v-if="isGenerating"
+                  class="flex items-center justify-center"
+                >
+                  <svg
+                    class="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      class="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      stroke-width="4"
+                    ></circle>
+                    <path
+                      class="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  Generating...
+                </span>
+                <span v-else>Generate SVG</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Panel - Preview and Output -->
+        <div class="space-y-6">
+          <!-- SVG Preview -->
+          <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-medium text-gray-900 mb-4">Preview</h2>
+
+            <div v-if="generationResult" class="space-y-4">
+              <!-- SVG Display -->
+              <div
+                class="border border-gray-200 rounded-lg p-4 bg-gray-50 min-h-[200px] flex items-center justify-center"
+              >
+                <div
+                  v-html="generationResult.svg"
+                  class="max-w-full max-h-full"
+                ></div>
+              </div>
+
+              <!-- Metadata -->
+              <div v-if="generationResult.meta" class="text-sm text-gray-600">
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <span class="font-medium">Size:</span>
+                    {{ generationResult.meta.width }}×{{
+                      generationResult.meta.height
+                    }}
+                  </div>
+                  <div>
+                    <span class="font-medium">Seed:</span>
+                    {{ generationResult.meta.seed }}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Copy Button -->
+              <button
+                @click="copySVGCode"
+                class="w-full bg-gray-100 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+              >
+                {{ copyButtonText }}
+              </button>
+            </div>
+
+            <div
+              v-else-if="!isGenerating"
+              class="text-center text-gray-500 py-12"
+            >
+              <svg
+                class="mx-auto h-12 w-12 text-gray-400"
+                stroke="currentColor"
+                fill="none"
+                viewBox="0 0 48 48"
+              >
+                <path
+                  d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <p class="mt-2">
+                Enter a prompt and click "Generate SVG" to see your creation
+              </p>
+            </div>
+
+            <div v-else class="text-center text-gray-500 py-12">
+              <svg
+                class="animate-spin mx-auto h-8 w-8 text-gray-400"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                ></circle>
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              <p class="mt-2">Generating your SVG...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-gray-200 mt-12">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <p class="text-center text-sm text-gray-500">
+          ⚠️ All generated SVGs are automatically sanitized for security. Only
+          safe elements and attributes are included.
+        </p>
+      </div>
+    </footer>
+  </div>
 </template>
 
 <script setup lang="ts">
-// Your Vue 3 Composition API code here
+import { ref } from "vue";
+import { useGeneration } from "./composables/useGeneration";
+
+// Use generation composable
+const {
+  generationParams,
+  generationResult,
+  sizePresets,
+  isGenerating,
+  error,
+  isOnline,
+  canRetry,
+  canGenerate,
+  setSizePreset,
+  generateSVG,
+  retryGeneration,
+  clearError,
+} = useGeneration();
+
+const globalError = ref<string | null>(null);
+const copyButtonText = ref("Copy SVG Code");
+
+// Methods
+
+const copySVGCode = async () => {
+  if (!generationResult.value?.svg) return;
+
+  try {
+    await navigator.clipboard.writeText(generationResult.value.svg);
+    copyButtonText.value = "Copied!";
+    setTimeout(() => {
+      copyButtonText.value = "Copy SVG Code";
+    }, 2000);
+  } catch (error) {
+    console.error("Copy failed:", error);
+    globalError.value = "Failed to copy to clipboard";
+  }
+};
+
+const clearGlobalError = () => {
+  globalError.value = null;
+};
+
+// Global error handler
+window.addEventListener("error", (event) => {
+  globalError.value = `Unexpected error: ${event.error?.message || "Unknown error"}`;
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  globalError.value = `Unhandled promise rejection: ${event.reason?.message || "Unknown error"}`;
+});
 </script>

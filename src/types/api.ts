@@ -1,5 +1,3 @@
-import { z } from "zod";
-
 // Size configuration interfaces
 export interface SizeConfig {
   preset: "icon" | "banner" | "square" | "custom";

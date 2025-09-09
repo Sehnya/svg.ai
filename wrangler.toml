@@ -1,0 +1,24 @@
+name = "svg-ai-api"
+main = "server/worker.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+NODE_ENV = "production"
+ALLOWED_ORIGINS = "https://svg-ai.pages.dev"
+
+# Uncomment and configure if you want to use KV storage for caching
+# [[kv_namespaces]]
+# binding = "CACHE"
+# id = "your-kv-namespace-id"
+
+[env.production]
+name = "svg-ai-api"
+
+[env.production.vars]
+NODE_ENV = "production"
+ALLOWED_ORIGINS = "https://svg-ai.pages.dev"
+
+# Uncomment for production KV namespace
+# [[env.production.kv_namespaces]]
+# binding = "CACHE"
+# id = "your-production-kv-namespace-id"

@@ -331,12 +331,18 @@
         </p>
       </div>
     </footer>
+
+    <!-- Toast Notifications -->
+    <ToastContainer />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from "vue";
 import { useGeneration } from "./composables/useGeneration";
+import { useErrorHandler } from "./composables/useErrorHandler";
+import ToastContainer from "./components/ToastContainer.vue";
+import ValidationErrors from "./components/ValidationErrors.vue";
 
 // Use generation composable
 const {
@@ -354,6 +360,7 @@ const {
   clearError,
 } = useGeneration();
 
+const errorHandler = useErrorHandler();
 const globalError = ref<string | null>(null);
 const copyButtonText = ref("Copy SVG Code");
 
@@ -365,12 +372,16 @@ const copySVGCode = async () => {
   try {
     await navigator.clipboard.writeText(generationResult.value.svg);
     copyButtonText.value = "Copied!";
+    errorHandler.showSuccess("Copied!", "SVG code copied to clipboard");
     setTimeout(() => {
       copyButtonText.value = "Copy SVG Code";
     }, 2000);
   } catch (error) {
     console.error("Copy failed:", error);
-    globalError.value = "Failed to copy to clipboard";
+    errorHandler.handleCopyError(
+      error instanceof Error ? error : new Error("Copy failed"),
+      { component: "App", action: "copySVGCode" }
+    );
   }
 };
 
@@ -380,10 +391,21 @@ const clearGlobalError = () => {
 
 // Global error handler
 window.addEventListener("error", (event) => {
-  globalError.value = `Unexpected error: ${event.error?.message || "Unknown error"}`;
+  const error = event.error || new Error("Unknown error");
+  errorHandler.handleUnexpectedError(error, {
+    component: "App",
+    action: "global_error_handler",
+  });
 });
 
 window.addEventListener("unhandledrejection", (event) => {
-  globalError.value = `Unhandled promise rejection: ${event.reason?.message || "Unknown error"}`;
+  const error =
+    event.reason instanceof Error
+      ? event.reason
+      : new Error(event.reason?.message || "Unknown error");
+  errorHandler.handleUnexpectedError(error, {
+    component: "App",
+    action: "unhandled_rejection",
+  });
 });
 </script>

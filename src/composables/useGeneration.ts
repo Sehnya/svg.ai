@@ -1,14 +1,19 @@
-import { ref, reactive, computed } from "vue";
+import { ref, reactive, computed, watch } from "vue";
 import type {
   GenerationRequest,
   GenerationResponse,
   SizeConfig,
 } from "../types/api";
 import { useApi } from "./useApi";
+import { useErrorHandler } from "./useErrorHandler";
+import { useFormValidation } from "./useFormValidation";
+import { InputSanitizer } from "../utils/inputSanitizer";
 
 export function useGeneration() {
   // Use API composable for network operations
   const api = useApi();
+  const errorHandler = useErrorHandler();
+  const validation = useFormValidation();
 
   // Reactive state
   const generationParams = reactive<{
@@ -57,7 +62,115 @@ export function useGeneration() {
     }
   };
 
+  // Initialize form validation
+  validation.registerField("prompt", {
+    isValid: false,
+    message: "Prompt is required",
+  });
+  validation.registerField("width", { isValid: true });
+  validation.registerField("height", { isValid: true });
+
+  // Watch for prompt changes and sanitize input
+  watch(
+    () => generationParams.prompt,
+    (newPrompt) => {
+      if (newPrompt) {
+        const sanitizationResult = InputSanitizer.sanitizePrompt(newPrompt);
+
+        if (sanitizationResult.wasModified) {
+          generationParams.prompt = sanitizationResult.sanitized;
+
+          // Show warnings for sanitization
+          sanitizationResult.warnings.forEach((warning) => {
+            errorHandler.showWarning("Input Modified", warning);
+          });
+        }
+
+        // Check for suspicious input
+        if (InputSanitizer.isSuspiciousInput(newPrompt)) {
+          errorHandler.showWarning(
+            "Suspicious Input Detected",
+            "Your input contains potentially unsafe content that has been removed."
+          );
+        }
+      }
+    }
+  );
+
+  const validateInput = () => {
+    // Sanitize and validate prompt
+    const promptResult = InputSanitizer.sanitizePrompt(generationParams.prompt);
+    const prompt = promptResult.sanitized;
+
+    // Sanitize and validate dimensions
+    const widthResult = InputSanitizer.sanitizeNumber(
+      generationParams.size.width,
+      16,
+      2048,
+      64
+    );
+    const heightResult = InputSanitizer.sanitizeNumber(
+      generationParams.size.height,
+      16,
+      2048,
+      64
+    );
+
+    // Update values if they were sanitized
+    if (widthResult.wasModified) {
+      generationParams.size.width = widthResult.value;
+      widthResult.warnings.forEach((warning) => {
+        errorHandler.showWarning("Width Adjusted", warning);
+      });
+    }
+
+    if (heightResult.wasModified) {
+      generationParams.size.height = heightResult.value;
+      heightResult.warnings.forEach((warning) => {
+        errorHandler.showWarning("Height Adjusted", warning);
+      });
+    }
+
+    // Validate prompt
+    validation.updateFieldValidation(
+      "prompt",
+      prompt.length > 0 && prompt.length <= 500,
+      prompt.length === 0
+        ? "Prompt is required"
+        : prompt.length > 500
+          ? "Prompt must be 500 characters or less"
+          : undefined
+    );
+
+    // Validate dimensions
+    validation.updateFieldValidation(
+      "width",
+      widthResult.value >= 16 && widthResult.value <= 2048,
+      widthResult.value < 16 || widthResult.value > 2048
+        ? "Width must be between 16 and 2048 pixels"
+        : undefined
+    );
+
+    validation.updateFieldValidation(
+      "height",
+      heightResult.value >= 16 && heightResult.value <= 2048,
+      heightResult.value < 16 || heightResult.value > 2048
+        ? "Height must be between 16 and 2048 pixels"
+        : undefined
+    );
+
+    return validation.isFormValid.value;
+  };
+
   const generateSVG = async () => {
+    if (!validateInput()) {
+      errorHandler.handleValidationErrors(validation.validationErrors.value, {
+        component: "useGeneration",
+        action: "generateSVG",
+      });
+      return;
+    }
+
     if (!canGenerate.value) return;
 
     const request: GenerationRequest = {

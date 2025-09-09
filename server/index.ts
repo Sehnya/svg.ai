@@ -1,24 +1,66 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { secureHeaders } from "hono/secure-headers";
+import { timeout } from "hono/timeout";
 import { swaggerUI } from "@hono/swagger-ui";
 import { healthCheckRoute, generateSVGRoute } from "./schemas/openapi";
 import { SVGGenerator } from "./services/SVGGenerator";
 import { RuleBasedGenerator } from "./services/RuleBasedGenerator";
 import { OpenAIGenerator } from "./services/OpenAIGenerator";
+import { SecurityTester } from "./utils/securityTester";
 
 const app = new OpenAPIHono();
+
+// Security headers middleware
+app.use(
+  "*",
+  secureHeaders({
+    contentSecurityPolicy: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"], // For Swagger UI
+      styleSrc: ["'self'", "'unsafe-inline'"], // For Swagger UI
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+    crossOriginEmbedderPolicy: false, // Disable for development
+  })
+);
+
+// Request timeout middleware
+app.use("/api/*", timeout(30000)); // 30 second timeout
 
 // Request logging middleware
 app.use("*", logger());
 
-// CORS middleware
+// CORS middleware with enhanced security
 app.use(
   "*",
   cors({
-    origin: ["http://localhost:5173", "http://localhost:3000"],
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization"],
+    origin: (origin) => {
+      // Allow requests from development servers and production domains
+      const allowedOrigins = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+      ];
+
+      // Add production origins from environment
+      if (process.env.ALLOWED_ORIGINS) {
+        allowedOrigins.push(...process.env.ALLOWED_ORIGINS.split(","));
+      }
+
+      return allowedOrigins.includes(origin || "");
+    },
+    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    credentials: false, // Disable credentials for security
+    maxAge: 86400, // Cache preflight for 24 hours
   })
 );
 
@@ -78,6 +120,56 @@ app.use("/api/*", async (c, next) => {
   await next();
 });
 
+// Input sanitization middleware
+app.use("/api/*", async (c, next) => {
+  // Check for suspicious patterns in request body
+  if (c.req.method === "POST") {
+    try {
+      const body = await c.req.text();
+
+      // Reset the request body for further processing
+      c.req = new Request(c.req.url, {
+        method: c.req.method,
+        headers: c.req.headers,
+        body: body,
+      });
+
+      // Check for potentially malicious patterns
+      const suspiciousPatterns = [
+        /<script[^>]*>/i,
+        /javascript:/i,
+        /vbscript:/i,
+        /onload\s*=/i,
+        /onerror\s*=/i,
+        /onclick\s*=/i,
+        /eval\s*\(/i,
+        /document\.cookie/i,
+        /window\.location/i,
+      ];
+
+      const hasSuspiciousContent = suspiciousPatterns.some((pattern) =>
+        pattern.test(body)
+      );
+
+      if (hasSuspiciousContent) {
+        console.warn("Suspicious input detected:", body.substring(0, 100));
+        return c.json(
+          {
+            error: "Invalid input",
+            details: ["Request contains potentially unsafe content"],
+          },
+          400
+        );
+      }
+    } catch (error) {
+      // If we can't parse the body, let the next middleware handle it
+      console.warn("Could not parse request body for sanitization:", error);
+    }
+  }
+
+  await next();
+});
+
 // Error handling middleware
 app.onError((err, c) => {
   console.error("Server error:", err);
@@ -113,6 +205,51 @@ app.openapi(healthCheckRoute, (c) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// Security test endpoint (only in development)
+if (process.env.NODE_ENV !== "production") {
+  app.get("/security/test", async (c) => {
+    try {
+      const tester = new SecurityTester();
+      const results = await tester.runAllTests();
+
+      return c.json({
+        summary: {
+          total: results.length,
+          passed: results.filter((r) => r.passed).length,
+          failed: results.filter((r) => !r.passed).length,
+        },
+        results,
+      });
+    } catch (error) {
+      return c.json(
+        {
+          error: "Security test failed",
+          details: error instanceof Error ? error.message : "Unknown error",
+        },
+        500
+      );
+    }
+  });
+
+  app.get("/security/report", async (c) => {
+    try {
+      const tester = new SecurityTester();
+      const report = await tester.generateSecurityReport();
+
+      c.header("Content-Type", "text/markdown");
+      return c.text(report);
+    } catch (error) {
+      return c.json(
+        {
+          error: "Security report generation failed",
+          details: error instanceof Error ? error.message : "Unknown error",
+        },
+        500
+      );
+    }
+  });
+}
 
 // SVG generation endpoint
 app.openapi(generateSVGRoute, async (c) => {

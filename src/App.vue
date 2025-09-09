@@ -281,6 +281,13 @@
             @copy-id="handleLayerIdCopy"
           />
 
+          <!-- Feedback Controls -->
+          <FeedbackControls
+            v-if="generationResult?.eventId"
+            :event-id="generationResult.eventId"
+            :user-id="undefined"
+          />
+
           <!-- Warnings Display -->
           <div
             v-if="
@@ -365,11 +372,13 @@
 import { ref, computed } from "vue";
 import { useGeneration } from "./composables/useGeneration";
 import { useErrorHandler } from "./composables/useErrorHandler";
+import { useFeedback } from "./composables/useFeedback";
 import ToastContainer from "./components/ToastContainer.vue";
 import SVGPreview from "./components/SVGPreview.vue";
 import CodeOutput from "./components/CodeOutput.vue";
 import MetadataDisplay from "./components/MetadataDisplay.vue";
 import LayerInspector from "./components/LayerInspector.vue";
+import FeedbackControls from "./components/FeedbackControls.vue";
 
 // Use generation composable
 const {
@@ -388,6 +397,7 @@ const {
 } = useGeneration();
 
 const errorHandler = useErrorHandler();
+const { submitImplicitFeedback } = useFeedback();
 const globalError = ref<string | null>(null);
 const selectedLayer = ref<string | null>(null);
 const currentFormat = ref<string>("svg");
@@ -425,7 +435,19 @@ const handleCopy = () => {
   errorHandler.showSuccess("Copied!", "SVG copied to clipboard");
 };
 
-const handleDownload = () => {
+const handleDownload = async () => {
+  // Record implicit feedback for export
+  if (generationResult.value?.eventId) {
+    try {
+      await submitImplicitFeedback({
+        eventId: generationResult.value.eventId,
+        signal: "exported",
+      });
+    } catch (error) {
+      console.warn("Failed to record export feedback:", error);
+    }
+  }
+
   errorHandler.showSuccess("Downloaded!", "SVG file downloaded successfully");
 };
 
@@ -436,11 +458,23 @@ const handleCodeCopy = (_code: string, format: string) => {
   );
 };
 
-const handleCodeDownload = (
+const handleCodeDownload = async (
   _code: string,
   _format: string,
   filename: string
 ) => {
+  // Record implicit feedback for export
+  if (generationResult.value?.eventId) {
+    try {
+      await submitImplicitFeedback({
+        eventId: generationResult.value.eventId,
+        signal: "exported",
+      });
+    } catch (error) {
+      console.warn("Failed to record export feedback:", error);
+    }
+  }
+
   errorHandler.showSuccess(
     "Downloaded!",
     `${filename} downloaded successfully`

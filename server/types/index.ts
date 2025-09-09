@@ -1,5 +1,6 @@
 // Main types export file for server
 export * from "./api";
+export * from "./pipeline";
 
 // Constants for SVG validation
 export const SVG_CONSTANTS = {

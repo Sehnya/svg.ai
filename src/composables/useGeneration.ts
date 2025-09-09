@@ -214,6 +214,9 @@ export function useGeneration() {
   const retryGeneration = async () => {
     if (!generationParams.prompt.trim()) return;
 
+    // Record implicit feedback for regeneration if there was a previous result
+    const previousEventId = generationResult.value?.eventId;
+
     const request: GenerationRequest = {
       prompt: generationParams.prompt.trim(),
       size: {
@@ -227,6 +230,17 @@ export function useGeneration() {
     const result = await api.retry(request);
     if (result) {
       generationResult.value = result;
+
+      // Record implicit feedback for the previous generation
+      if (previousEventId) {
+        try {
+          // This would need to be imported and used properly
+          // For now, we'll handle this in the component level
+          console.log("Previous generation regenerated:", previousEventId);
+        } catch (error) {
+          console.warn("Failed to record regeneration feedback:", error);
+        }
+      }
     }
   };
 

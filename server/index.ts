@@ -10,6 +10,13 @@ import { RuleBasedGenerator } from "./services/RuleBasedGenerator";
 import { OpenAIGenerator } from "./services/OpenAIGenerator";
 import { SecurityTester } from "./utils/securityTester";
 import { ResponseCache } from "./utils/cache";
+import { checkDatabaseHealth, initializeDatabase } from "./db/config";
+import feedbackAPI from "./api/feedback";
+import cacheAPI from "./api/cache";
+import generateAPI, { initializeGenerationAPI } from "./api/generate";
+import kbAPI, { initializeKBAPI } from "./api/kb";
+import { PreferenceEngine } from "./services/PreferenceEngine";
+import { cacheCleanupJob } from "./services/CacheCleanupJob";
 
 const app = new OpenAPIHono();
 
@@ -56,7 +63,7 @@ app.use(
         allowedOrigins.push(...process.env.ALLOWED_ORIGINS.split(","));
       }
 
-      return allowedOrigins.includes(origin || "");
+      return allowedOrigins.includes(origin || "") ? origin : null;
     },
     allowMethods: ["GET", "POST", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
@@ -124,16 +131,11 @@ app.use("/api/*", async (c, next) => {
 // Input sanitization middleware
 app.use("/api/*", async (c, next) => {
   // Check for suspicious patterns in request body
-  if (c.req.method === "POST") {
+  if (c.req.method === "POST" || c.req.method === "PUT") {
     try {
-      const body = await c.req.text();
-
-      // Reset the request body for further processing
-      c.req = new Request(c.req.url, {
-        method: c.req.method,
-        headers: c.req.headers,
-        body: body,
-      });
+      // Clone the request to avoid modifying the original
+      const clonedRequest = c.req.raw.clone();
+      const body = await clonedRequest.text();
 
       // Check for potentially malicious patterns
       const suspiciousPatterns = [
@@ -186,12 +188,36 @@ app.onError((err, c) => {
 // Initialize services
 const ruleBasedGenerator = new RuleBasedGenerator();
 let openaiGenerator: OpenAIGenerator | null = null;
+let preferenceEngine: PreferenceEngine | null = null;
 
 // Initialize cache
 const responseCache = new ResponseCache(
   parseInt(process.env.CACHE_MAX_SIZE || "1000"),
   parseInt(process.env.CACHE_TTL_MINUTES || "60")
 );
+
+// Initialize database
+let databaseHealthy = false;
+try {
+  await initializeDatabase();
+  databaseHealthy = await checkDatabaseHealth();
+  if (databaseHealthy) {
+    console.log("✅ Database connected and healthy");
+
+    // Initialize preference engine if database is healthy
+    preferenceEngine = PreferenceEngine.getInstance();
+    console.log("✅ Preference engine initialized");
+
+    // Start cache cleanup job
+    cacheCleanupJob.start();
+    console.log("✅ Cache cleanup job started");
+  } else {
+    console.log("⚠️  Database connection issues detected");
+  }
+} catch (error) {
+  console.error("❌ Database initialization failed:", error);
+  console.log("⚠️  Knowledge base features will be disabled");
+}
 
 // Initialize OpenAI generator if API key is available
 try {
@@ -206,10 +232,18 @@ try {
 }
 
 // Health check endpoint
-app.openapi(healthCheckRoute, (c) => {
+app.openapi(healthCheckRoute, async (c) => {
+  const dbHealth = await checkDatabaseHealth();
+
   return c.json({
     status: "ok",
     timestamp: new Date().toISOString(),
+    services: {
+      database: dbHealth ? "healthy" : "unhealthy",
+      openai: openaiGenerator ? "available" : "unavailable",
+      cache: "healthy",
+      preferences: preferenceEngine ? "available" : "unavailable",
+    },
   });
 });
 
@@ -258,6 +292,30 @@ if (process.env.NODE_ENV !== "production") {
   });
 }
 
+// Initialize enhanced generation API
+try {
+  await initializeGenerationAPI();
+  console.log("✅ Enhanced generation API initialized");
+} catch (error) {
+  console.error("❌ Failed to initialize enhanced generation API:", error);
+}
+
+// Initialize knowledge base API
+if (databaseHealthy) {
+  try {
+    await initializeKBAPI();
+    console.log("✅ Knowledge base API initialized");
+  } catch (error) {
+    console.error("❌ Failed to initialize knowledge base API:", error);
+  }
+}
+
+// Mount API routes
+app.route("/api/feedback", feedbackAPI);
+app.route("/api/cache", cacheAPI);
+app.route("/api/kb", kbAPI);
+app.route("/api", generateAPI);
+
 // SVG generation endpoint
 app.openapi(generateSVGRoute, async (c) => {
   try {
@@ -293,6 +351,27 @@ app.openapi(generateSVGRoute, async (c) => {
 
     const result = await generator.generate(request);
 
+    // Log generation event if preference engine is available
+    let eventId: number | undefined;
+    if (preferenceEngine && result.svg) {
+      try {
+        eventId = await preferenceEngine.logGenerationEvent({
+          userId: request.userId, // Add userId to request schema if needed
+          prompt: request.prompt,
+          intent: undefined, // Will be populated when structured pipeline is implemented
+          plan: undefined, // Will be populated when structured pipeline is implemented
+          doc: undefined, // Will be populated when structured pipeline is implemented
+          usedObjectIds: [], // Will be populated when KB integration is complete
+          modelInfo: {
+            model: request.model || "rule-based",
+            timestamp: new Date().toISOString(),
+          },
+        });
+      } catch (error) {
+        console.warn("Failed to log generation event:", error);
+      }
+    }
+
     // Check if generation had critical errors
     if (result.errors.length > 0 && !result.svg) {
       return c.json(
@@ -309,7 +388,10 @@ app.openapi(generateSVGRoute, async (c) => {
       responseCache.set(request, result);
     }
 
-    return c.json(result, 200);
+    // Add event ID to response for feedback tracking
+    const response = eventId ? { ...result, eventId } : result;
+
+    return c.json(response, 200);
   } catch (error) {
     console.error("Generation error:", error);
     return c.json(

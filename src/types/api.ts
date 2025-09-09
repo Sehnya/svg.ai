@@ -40,6 +40,7 @@ export interface GenerationRequest {
   palette?: string[];
   seed?: number;
   model?: "rule-based" | "llm";
+  userId?: string; // For feedback tracking
 }
 
 // Generation response interface
@@ -49,6 +50,7 @@ export interface GenerationResponse {
   layers: LayerInfo[];
   warnings: string[];
   errors: string[];
+  eventId?: number; // For feedback tracking
 }
 
 // SVG Contract interface for validation

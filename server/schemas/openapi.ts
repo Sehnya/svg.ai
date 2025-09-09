@@ -41,6 +41,10 @@ export const GenerationRequestSchema = z
         description: "Generation method to use",
         example: "rule-based",
       }),
+    userId: z.string().optional().openapi({
+      description: "User ID for feedback tracking",
+      example: "user-123",
+    }),
   })
   .openapi({
     description: "Request payload for SVG generation",
@@ -119,6 +123,10 @@ export const GenerationResponseSchema = z
     errors: z.array(z.string()).openapi({
       description: "Errors that occurred during generation",
       example: [],
+    }),
+    eventId: z.number().optional().openapi({
+      description: "Event ID for feedback tracking",
+      example: 12345,
     }),
   })
   .openapi({

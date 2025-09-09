@@ -1,277 +1,166 @@
-/**
- * Input sanitization utilities for the frontend
- */
-
 export interface SanitizationResult {
   sanitized: string;
   wasModified: boolean;
   warnings: string[];
 }
 
+export interface NumberSanitizationResult {
+  value: number;
+  wasModified: boolean;
+  warnings: string[];
+}
+
 export class InputSanitizer {
-  private static readonly DANGEROUS_PATTERNS = [
-    // Script injection patterns
-    /<script[^>]*>.*?<\/script>/gi,
-    /javascript:/gi,
-    /vbscript:/gi,
-
-    // Event handlers
-    /on\w+\s*=/gi,
-
-    // Data URLs with scripts
-    /data:text\/html/gi,
-    /data:application\/javascript/gi,
-
-    // Common XSS patterns
-    /eval\s*\(/gi,
-    /document\.cookie/gi,
-    /window\.location/gi,
-    /alert\s*\(/gi,
-
-    // SQL injection patterns (basic)
-    /union\s+select/gi,
-    /drop\s+table/gi,
-    /delete\s+from/gi,
-  ];
-
-  private static readonly HTML_ENTITIES: Record<string, string> = {
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#x27;",
-    "/": "&#x2F;",
-  };
-
-  /**
-   * Sanitize user input by removing dangerous patterns and encoding HTML entities
-   */
-  static sanitizeInput(input: string): SanitizationResult {
-    if (!input || typeof input !== "string") {
-      return {
-        sanitized: "",
-        wasModified: false,
-        warnings: [],
-      };
-    }
-
+  // Sanitize text prompts
+  static sanitizePrompt(input: string): SanitizationResult {
+    const original = input;
     let sanitized = input;
     const warnings: string[] = [];
-    let wasModified = false;
 
-    // Check for dangerous patterns
-    for (const pattern of this.DANGEROUS_PATTERNS) {
+    // Remove potentially dangerous patterns
+    const dangerousPatterns = [
+      {
+        pattern: /<script[^>]*>.*?<\/script>/gi,
+        replacement: "",
+        warning: "Script tags removed",
+      },
+      {
+        pattern: /javascript:/gi,
+        replacement: "",
+        warning: "JavaScript URLs removed",
+      },
+      {
+        pattern: /vbscript:/gi,
+        replacement: "",
+        warning: "VBScript URLs removed",
+      },
+      {
+        pattern: /on\w+\s*=/gi,
+        replacement: "",
+        warning: "Event handlers removed",
+      },
+      {
+        pattern: /<iframe[^>]*>.*?<\/iframe>/gi,
+        replacement: "",
+        warning: "Iframe tags removed",
+      },
+      {
+        pattern: /<object[^>]*>.*?<\/object>/gi,
+        replacement: "",
+        warning: "Object tags removed",
+      },
+      {
+        pattern: /<embed[^>]*>/gi,
+        replacement: "",
+        warning: "Embed tags removed",
+      },
+    ];
+
+    for (const { pattern, replacement, warning } of dangerousPatterns) {
       if (pattern.test(sanitized)) {
-        sanitized = sanitized.replace(pattern, "");
-        wasModified = true;
-        warnings.push("Potentially unsafe content was removed from your input");
-        break; // Only show one warning to avoid spam
+        sanitized = sanitized.replace(pattern, replacement);
+        warnings.push(warning);
       }
     }
 
-    // Encode HTML entities in the remaining content
-    const originalLength = sanitized.length;
-    sanitized = this.encodeHTMLEntities(sanitized);
+    // Trim whitespace
+    sanitized = sanitized.trim();
 
-    if (sanitized.length !== originalLength) {
-      wasModified = true;
-    }
-
-    // Trim excessive whitespace
-    const trimmed = sanitized.trim().replace(/\s+/g, " ");
-    if (trimmed !== sanitized) {
-      sanitized = trimmed;
-      wasModified = true;
+    // Limit length
+    if (sanitized.length > 500) {
+      sanitized = sanitized.substring(0, 500);
+      warnings.push("Input truncated to 500 characters");
     }
 
     return {
       sanitized,
-      wasModified,
+      wasModified: sanitized !== original,
       warnings,
     };
   }
 
-  /**
-   * Sanitize prompt input specifically for SVG generation
-   */
-  static sanitizePrompt(prompt: string): SanitizationResult {
-    const result = this.sanitizeInput(prompt);
-
-    // Additional prompt-specific validation
-    if (result.sanitized.length > 500) {
-      result.sanitized = result.sanitized.substring(0, 500);
-      result.wasModified = true;
-      result.warnings.push("Prompt was truncated to 500 characters");
-    }
-
-    // Check for excessive special characters
-    const specialCharCount = (
-      result.sanitized.match(/[^a-zA-Z0-9\s.,!?-]/g) || []
-    ).length;
-    const totalLength = result.sanitized.length;
-
-    if (totalLength > 0 && specialCharCount / totalLength > 0.3) {
-      result.warnings.push(
-        "Your prompt contains many special characters which may affect generation quality"
-      );
-    }
-
-    return result;
-  }
-
-  /**
-   * Validate and sanitize numeric input
-   */
+  // Sanitize numeric inputs
   static sanitizeNumber(
-    value: any,
+    input: number,
     min: number,
     max: number,
     defaultValue: number
-  ): { value: number; wasModified: boolean; warnings: string[] } {
+  ): NumberSanitizationResult {
+    const original = input;
+    let value = input;
     const warnings: string[] = [];
-    let wasModified = false;
-    let numValue: number;
 
-    // Convert to number
-    if (typeof value === "string") {
-      numValue = parseFloat(value);
-    } else if (typeof value === "number") {
-      numValue = value;
-    } else {
-      numValue = defaultValue;
-      wasModified = true;
-      warnings.push("Invalid number format, using default value");
-    }
-
-    // Check if it's a valid number
-    if (isNaN(numValue) || !isFinite(numValue)) {
-      numValue = defaultValue;
-      wasModified = true;
-      warnings.push("Invalid number, using default value");
+    // Handle NaN or invalid numbers
+    if (isNaN(value) || !isFinite(value)) {
+      value = defaultValue;
+      warnings.push(
+        `Invalid number replaced with default value ${defaultValue}`
+      );
     }
 
     // Clamp to range
-    if (numValue < min) {
-      numValue = min;
-      wasModified = true;
-      warnings.push(`Value was below minimum (${min}), adjusted to minimum`);
-    } else if (numValue > max) {
-      numValue = max;
-      wasModified = true;
-      warnings.push(`Value was above maximum (${max}), adjusted to maximum`);
+    if (value < min) {
+      value = min;
+      warnings.push(`Value increased to minimum ${min}`);
+    } else if (value > max) {
+      value = max;
+      warnings.push(`Value decreased to maximum ${max}`);
     }
 
-    // Round to reasonable precision
-    const rounded = Math.round(numValue * 100) / 100;
-    if (rounded !== numValue) {
-      numValue = rounded;
-      wasModified = true;
+    // Round to integer for pixel values
+    const rounded = Math.round(value);
+    if (rounded !== value) {
+      value = rounded;
+      warnings.push("Value rounded to nearest integer");
     }
 
     return {
-      value: numValue,
-      wasModified,
+      value,
+      wasModified: value !== original,
       warnings,
     };
   }
 
-  /**
-   * Sanitize color values
-   */
-  static sanitizeColor(color: string): SanitizationResult {
-    if (!color || typeof color !== "string") {
-      return {
-        sanitized: "#000000",
-        wasModified: true,
-        warnings: ["Invalid color format, using black"],
-      };
-    }
-
-    let sanitized = color.trim().toLowerCase();
-    const warnings: string[] = [];
-    let wasModified = false;
-
-    // Remove any dangerous content
-    const inputResult = this.sanitizeInput(sanitized);
-    sanitized = inputResult.sanitized;
-    wasModified = inputResult.wasModified;
-    warnings.push(...inputResult.warnings);
-
-    // Validate hex color format
-    if (sanitized.startsWith("#")) {
-      const hexPattern = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
-      if (!hexPattern.test(sanitized)) {
-        sanitized = "#000000";
-        wasModified = true;
-        warnings.push("Invalid hex color format, using black");
-      }
-    } else {
-      // For named colors, we'll be restrictive and only allow basic ones
-      const allowedColors = [
-        "red",
-        "green",
-        "blue",
-        "yellow",
-        "orange",
-        "purple",
-        "pink",
-        "black",
-        "white",
-        "gray",
-        "grey",
-        "brown",
-        "cyan",
-        "magenta",
-        "lime",
-        "navy",
-        "maroon",
-        "olive",
-        "teal",
-        "silver",
-        "gold",
-      ];
-
-      if (!allowedColors.includes(sanitized)) {
-        sanitized = "#000000";
-        wasModified = true;
-        warnings.push("Unsupported color name, using black");
-      }
-    }
-
-    return {
-      sanitized,
-      wasModified,
-      warnings,
-    };
-  }
-
-  /**
-   * Encode HTML entities to prevent XSS
-   */
-  private static encodeHTMLEntities(str: string): string {
-    return str.replace(/[&<>"'\/]/g, (match) => {
-      return this.HTML_ENTITIES[match] || match;
-    });
-  }
-
-  /**
-   * Validate that a string contains only safe characters
-   */
-  static containsOnlySafeCharacters(input: string): boolean {
-    // Allow alphanumeric, spaces, and common punctuation
-    const safePattern = /^[a-zA-Z0-9\s.,!?;:()\-_+=\[\]{}'"@#$%^&*\/\\|`~]*$/;
-    return safePattern.test(input);
-  }
-
-  /**
-   * Check if input appears to be malicious
-   */
+  // Check for suspicious input patterns
   static isSuspiciousInput(input: string): boolean {
-    if (!input || typeof input !== "string") {
-      return false;
-    }
+    const suspiciousPatterns = [
+      /<script/i,
+      /javascript:/i,
+      /vbscript:/i,
+      /on\w+\s*=/i,
+      /eval\s*\(/i,
+      /document\./i,
+      /window\./i,
+      /alert\s*\(/i,
+      /confirm\s*\(/i,
+      /prompt\s*\(/i,
+    ];
 
-    // Check for dangerous patterns
-    return this.DANGEROUS_PATTERNS.some((pattern) => pattern.test(input));
+    return suspiciousPatterns.some((pattern) => pattern.test(input));
+  }
+
+  // Sanitize file names
+  static sanitizeFilename(input: string): string {
+    return input
+      .replace(/[^a-zA-Z0-9._-]/g, "_") // Replace invalid characters
+      .replace(/_{2,}/g, "_") // Replace multiple underscores with single
+      .replace(/^_+|_+$/g, "") // Remove leading/trailing underscores
+      .substring(0, 255); // Limit length
+  }
+
+  // Sanitize URLs
+  static sanitizeUrl(input: string): string | null {
+    try {
+      const url = new URL(input);
+
+      // Only allow http and https protocols
+      if (!["http:", "https:"].includes(url.protocol)) {
+        return null;
+      }
+
+      return url.toString();
+    } catch {
+      return null;
+    }
   }
 }

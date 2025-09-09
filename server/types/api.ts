@@ -42,6 +42,7 @@ export interface GenerationRequest {
   palette?: string[];
   seed?: number;
   model?: "rule-based" | "llm";
+  userId?: string; // For feedback tracking
 }
 
 // Generation response interface
@@ -51,6 +52,7 @@ export interface GenerationResponse {
   layers: LayerInfo[];
   warnings: string[];
   errors: string[];
+  eventId?: number; // For feedback tracking
 }
 
 // SVG Contract interface for validation
@@ -126,6 +128,7 @@ export const GenerationRequestSchema = z.object({
   palette: z.array(z.string()).optional(),
   seed: z.number().optional(),
   model: z.enum(["rule-based", "llm"]).optional(),
+  userId: z.string().optional(), // For feedback tracking
 });
 
 export const GenerationResponseSchema = z.object({
@@ -134,6 +137,7 @@ export const GenerationResponseSchema = z.object({
   layers: z.array(LayerInfoSchema),
   warnings: z.array(z.string()),
   errors: z.array(z.string()),
+  eventId: z.number().optional(), // For feedback tracking
 });
 
 // Server-specific types

@@ -21,6 +21,7 @@ import {
   type TokenMetrics,
   type OptimizationResult,
 } from "../utils/tokenOptimizer";
+import { EmbeddingService } from "./EmbeddingService.js";
 
 // Knowledge Base types
 export type KBObjectKind =
@@ -106,6 +107,7 @@ export class KnowledgeBaseManager {
   private static instance: KnowledgeBaseManager;
   private cacheManager = cacheManager;
   private tokenOptimizer = tokenOptimizer;
+  private embeddingService?: EmbeddingService;
 
   // Scoring algorithm weights (α=0.6 similarity + β=0.2 preference + γ=0.2 quality - δ=0.1 freshness)
   private readonly SCORING_WEIGHTS = {
@@ -137,6 +139,17 @@ export class KnowledgeBaseManager {
     if (KnowledgeBaseManager.instance) {
       return KnowledgeBaseManager.instance;
     }
+
+    // Initialize embedding service if API key is available
+    if (process.env.OPENAI_API_KEY) {
+      this.embeddingService = new EmbeddingService({
+        model: "text-embedding-3-small",
+        apiKey: process.env.OPENAI_API_KEY,
+        batchSize: 100,
+        cacheEnabled: true,
+      });
+    }
+
     KnowledgeBaseManager.instance = this;
   }
 
@@ -439,7 +452,74 @@ export class KnowledgeBaseManager {
     return grounding;
   }
 
-  private async getCandidates(_prompt: string): Promise<KBObject[]> {
+  private async getCandidates(prompt: string): Promise<KBObject[]> {
+    // Try semantic search first if embeddings are available
+    if (this.embeddingService) {
+      try {
+        return await this.getCandidatesWithSemanticSearch(prompt);
+      } catch (error) {
+        console.warn(
+          "Semantic search failed, falling back to tag-based search:",
+          error
+        );
+      }
+    }
+
+    // Fallback to tag-based filtering
+    return this.getCandidatesWithTagSearch(prompt);
+  }
+
+  private async getCandidatesWithSemanticSearch(
+    prompt: string
+  ): Promise<KBObject[]> {
+    if (!this.embeddingService) {
+      throw new Error("Embedding service not available");
+    }
+
+    // Generate embedding for the prompt
+    const promptEmbedding =
+      await this.embeddingService.generateEmbedding(prompt);
+
+    // Get all active objects with embeddings
+    const candidates = await db
+      .select()
+      .from(kbObjects)
+      .where(
+        and(
+          eq(kbObjects.status, "active"),
+          sql`${kbObjects.qualityScore} >= ${this.MIN_QUALITY_SCORE}`,
+          sql`${kbObjects.embedding} IS NOT NULL`
+        )
+      );
+
+    // Calculate semantic similarity and filter
+    const candidatesWithSimilarity = candidates
+      .map((obj) => {
+        if (!obj.embedding) return null;
+
+        const similarity = this.embeddingService!.calculateCosineSimilarity(
+          promptEmbedding.embedding,
+          obj.embedding as number[]
+        );
+
+        return { ...obj, semanticSimilarity: similarity };
+      })
+      .filter((obj) => obj !== null && obj.semanticSimilarity > 0.3) // Similarity threshold
+      .sort((a, b) => b!.semanticSimilarity - a!.semanticSimilarity)
+      .slice(0, 50); // Limit results
+
+    // Apply governance filters
+    return candidatesWithSimilarity
+      .filter((obj) => this.passesGovernanceFilter(obj!))
+      .map((obj) => {
+        const { semanticSimilarity, ...kbObj } = obj!;
+        return kbObj;
+      });
+  }
+
+  private async getCandidatesWithTagSearch(
+    prompt: string
+  ): Promise<KBObject[]> {
     // Get active objects with governance filtering
     const candidates = await db
       .select()
@@ -462,9 +542,9 @@ export class KnowledgeBaseManager {
     userPrefs: Preferences,
     globalPrefs: Preferences
   ): Promise<ScoredObject[]> {
-    return objects
-      .map((obj) => {
-        const similarity = this.calculateSimilarity(obj, prompt);
+    const scoredObjects = await Promise.all(
+      objects.map(async (obj) => {
+        const similarity = await this.calculateSimilarity(obj, prompt);
         const preferenceBoost = Math.min(
           this.MAX_PREFERENCE_BOOST,
           this.getPreferenceBoost(obj, userPrefs) +
@@ -736,11 +816,29 @@ export class KnowledgeBaseManager {
   }
 
   // Helper Methods
-  private calculateSimilarity(object: KBObject, prompt: string): number {
+  private async calculateSimilarity(
+    object: KBObject,
+    prompt: string
+  ): Promise<number> {
     // If embeddings are available, use cosine similarity
-    if (object.embedding && object.embedding.length > 0) {
-      // This would require embedding the prompt, which needs OpenAI API
-      // For now, fall back to tag-based similarity
+    if (
+      this.embeddingService &&
+      object.embedding &&
+      object.embedding.length > 0
+    ) {
+      try {
+        const promptEmbedding =
+          await this.embeddingService.generateEmbedding(prompt);
+        return this.embeddingService.calculateCosineSimilarity(
+          promptEmbedding.embedding,
+          object.embedding as number[]
+        );
+      } catch (error) {
+        console.warn(
+          "Failed to calculate semantic similarity, using tag-based fallback:",
+          error
+        );
+      }
     }
 
     // Tag-based similarity as fallback

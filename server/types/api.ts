@@ -41,8 +41,9 @@ export interface GenerationRequest {
   };
   palette?: string[];
   seed?: number;
-  model?: "rule-based" | "llm";
+  model?: "rule-based" | "llm" | "unified" | "rule-based-unified";
   userId?: string; // For feedback tracking
+  aspectRatio?: "1:1" | "4:3" | "16:9" | "3:2" | "2:3" | "9:16";
 }
 
 // Generation response interface
@@ -127,8 +128,11 @@ export const GenerationRequestSchema = z.object({
   }),
   palette: z.array(z.string()).optional(),
   seed: z.number().optional(),
-  model: z.enum(["rule-based", "llm"]).optional(),
+  model: z
+    .enum(["rule-based", "llm", "unified", "rule-based-unified"])
+    .optional(),
   userId: z.string().optional(), // For feedback tracking
+  aspectRatio: z.enum(["1:1", "4:3", "16:9", "3:2", "2:3", "9:16"]).optional(),
 });
 
 export const GenerationResponseSchema = z.object({

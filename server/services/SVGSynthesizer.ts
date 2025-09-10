@@ -1,5 +1,6 @@
 /**
  * SVGSynthesizer - Generates SVG documents using strict schemas with component reuse
+ * Enhanced to process unified language with layout specifications and coordinate conversion
  */
 import type {
   CompositionPlan,
@@ -9,20 +10,168 @@ import type {
 } from "../types/pipeline.js";
 import { AISVGDocumentSchema } from "../schemas/pipeline.js";
 import { ComponentLibrary } from "./ComponentLibrary.js";
-import type { GroundingData } from "./CompositionPlanner.js";
+import type {
+  GroundingData,
+  UnifiedCompositionPlan,
+} from "./CompositionPlanner.js";
+import type {
+  LayoutSpecification,
+  UnifiedLayeredSVGDocument,
+  AspectRatio,
+  RegionName,
+  AnchorPoint,
+} from "../types/unified-layered.js";
+import { RegionManager } from "./RegionManager.js";
+import { CoordinateMapper } from "./CoordinateMapper.js";
+import { ConstrainedSVGGenerator } from "./ConstrainedSVGGenerator.js";
+import { LayeredSVGGenerator } from "./LayeredSVGGenerator.js";
 
 export interface SynthesisContext {
   prompt: string;
   seed?: number;
   model?: string;
   userId?: string;
+  aspectRatio?: AspectRatio;
+  useUnifiedLayout?: boolean; // Enable unified layout processing
+}
+
+export interface UnifiedSynthesisOptions {
+  enableLayoutLanguage?: boolean;
+  enforceCanvasConstraints?: boolean;
+  useConstrainedGenerator?: boolean;
+  useLayeredGenerator?: boolean;
+  fallbackToTraditional?: boolean;
+}
+
+export interface UnifiedSynthesisResult {
+  document: AISVGDocument;
+  unifiedDocument?: UnifiedLayeredSVGDocument;
+  layoutSpecifications?: LayoutSpecification[];
+  coordinateMapping?: {
+    originalPositions: Array<{ x: number; y: number }>;
+    mappedPositions: Array<{ x: number; y: number }>;
+  };
+  metadata: {
+    synthesisMethod: "traditional" | "unified" | "constrained" | "layered";
+    layoutProcessed: boolean;
+    coordinatesConverted: boolean;
+  };
 }
 
 export class SVGSynthesizer {
   private componentLibrary: ComponentLibrary;
+  private regionManager: RegionManager;
+  private coordinateMapper: CoordinateMapper;
+  private constrainedGenerator?: ConstrainedSVGGenerator;
+  private layeredGenerator?: LayeredSVGGenerator;
 
-  constructor() {
+  constructor(aspectRatio: AspectRatio = "1:1") {
     this.componentLibrary = new ComponentLibrary();
+    this.regionManager = new RegionManager(aspectRatio);
+    this.coordinateMapper = new CoordinateMapper(512, 512, this.regionManager);
+  }
+
+  /**
+   * Initialize generators for unified synthesis
+   */
+  initializeUnifiedGenerators(apiKey?: string): void {
+    this.constrainedGenerator = new ConstrainedSVGGenerator();
+    if (apiKey) {
+      this.layeredGenerator = new LayeredSVGGenerator(apiKey);
+    }
+  }
+
+  /**
+   * Synthesize with unified layout specifications
+   */
+  async synthesizeUnified(
+    plan: UnifiedCompositionPlan,
+    grounding: GroundingData,
+    context: SynthesisContext,
+    options: UnifiedSynthesisOptions = {}
+  ): Promise<UnifiedSynthesisResult> {
+    const opts: Required<UnifiedSynthesisOptions> = {
+      enableLayoutLanguage: true,
+      enforceCanvasConstraints: true,
+      useConstrainedGenerator: false,
+      useLayeredGenerator: false,
+      fallbackToTraditional: true,
+      ...options,
+    };
+
+    // Update coordinate system for current aspect ratio
+    if (context.aspectRatio) {
+      this.updateAspectRatio(context.aspectRatio);
+    }
+
+    try {
+      // Try layered generation first if enabled
+      if (opts.useLayeredGenerator && this.layeredGenerator) {
+        return await this.synthesizeWithLayeredGenerator(
+          plan,
+          grounding,
+          context
+        );
+      }
+
+      // Try constrained generation if enabled
+      if (opts.useConstrainedGenerator && this.constrainedGenerator) {
+        return await this.synthesizeWithConstrainedGenerator(
+          plan,
+          grounding,
+          context
+        );
+      }
+
+      // Use unified layout processing
+      if (opts.enableLayoutLanguage) {
+        return await this.synthesizeWithUnifiedLayout(plan, grounding, context);
+      }
+
+      // Fallback to traditional synthesis
+      if (opts.fallbackToTraditional) {
+        const traditionalPlan = this.convertToTraditionalPlan(plan);
+        const document = await this.synthesize(
+          traditionalPlan,
+          grounding,
+          context
+        );
+
+        return {
+          document,
+          metadata: {
+            synthesisMethod: "traditional",
+            layoutProcessed: false,
+            coordinatesConverted: false,
+          },
+        };
+      }
+
+      throw new Error("No synthesis method available");
+    } catch (error) {
+      if (opts.fallbackToTraditional) {
+        console.warn(
+          "Unified synthesis failed, falling back to traditional:",
+          error
+        );
+        const traditionalPlan = this.convertToTraditionalPlan(plan);
+        const document = await this.synthesize(
+          traditionalPlan,
+          grounding,
+          context
+        );
+
+        return {
+          document,
+          metadata: {
+            synthesisMethod: "traditional",
+            layoutProcessed: false,
+            coordinatesConverted: false,
+          },
+        };
+      }
+      throw error;
+    }
   }
 
   async synthesize(
@@ -524,5 +673,463 @@ export class SVGSynthesizer {
 
     // Round to 2 decimal places to prevent excessive precision
     return Math.round(value * 100) / 100;
+  }
+
+  /**
+   * Synthesize using layered generator
+   */
+  private async synthesizeWithLayeredGenerator(
+    plan: UnifiedCompositionPlan,
+    grounding: GroundingData,
+    context: SynthesisContext
+  ): Promise<UnifiedSynthesisResult> {
+    if (!this.layeredGenerator) {
+      throw new Error("Layered generator not initialized");
+    }
+
+    // Convert unified plan to generation request
+    const request = this.convertToGenerationRequest(plan, context);
+
+    // Generate using layered approach
+    const response = await this.layeredGenerator.generate(request);
+
+    // Convert response to AISVGDocument
+    const document = this.convertResponseToDocument(response, plan, context);
+
+    return {
+      document,
+      unifiedDocument: plan.unifiedDocument,
+      layoutSpecifications: plan.layoutSpecifications,
+      metadata: {
+        synthesisMethod: "layered",
+        layoutProcessed: true,
+        coordinatesConverted: true,
+      },
+    };
+  }
+
+  /**
+   * Synthesize using constrained generator
+   */
+  private async synthesizeWithConstrainedGenerator(
+    plan: UnifiedCompositionPlan,
+    grounding: GroundingData,
+    context: SynthesisContext
+  ): Promise<UnifiedSynthesisResult> {
+    if (!this.constrainedGenerator) {
+      throw new Error("Constrained generator not initialized");
+    }
+
+    // Generate using constrained approach
+    const response =
+      await this.constrainedGenerator.generateFromUnifiedDocument(
+        plan.unifiedDocument
+      );
+
+    // Convert response to AISVGDocument
+    const document = this.convertResponseToDocument(response, plan, context);
+
+    return {
+      document,
+      unifiedDocument: plan.unifiedDocument,
+      layoutSpecifications: plan.layoutSpecifications,
+      metadata: {
+        synthesisMethod: "constrained",
+        layoutProcessed: true,
+        coordinatesConverted: true,
+      },
+    };
+  }
+
+  /**
+   * Synthesize with unified layout processing
+   */
+  private async synthesizeWithUnifiedLayout(
+    plan: UnifiedCompositionPlan,
+    grounding: GroundingData,
+    context: SynthesisContext
+  ): Promise<UnifiedSynthesisResult> {
+    // Process layout specifications to get pixel coordinates
+    const coordinateMapping = await this.processLayoutSpecifications(
+      plan.layoutSpecifications,
+      plan.unifiedDocument
+    );
+
+    // Convert unified document to traditional components
+    const components = await this.convertUnifiedToComponents(
+      plan.unifiedDocument,
+      coordinateMapping
+    );
+
+    // Create traditional document
+    const document: AISVGDocument = {
+      components,
+      metadata: this.createMetadataFromUnified(plan, context),
+      bounds: {
+        width: plan.unifiedDocument.canvas.width,
+        height: plan.unifiedDocument.canvas.height,
+      },
+      palette: this.extractPaletteFromUnified(plan.unifiedDocument),
+    };
+
+    return {
+      document,
+      unifiedDocument: plan.unifiedDocument,
+      layoutSpecifications: plan.layoutSpecifications,
+      coordinateMapping,
+      metadata: {
+        synthesisMethod: "unified",
+        layoutProcessed: true,
+        coordinatesConverted: true,
+      },
+    };
+  }
+
+  /**
+   * Process layout specifications to convert to pixel coordinates
+   */
+  private async processLayoutSpecifications(
+    specifications: LayoutSpecification[],
+    unifiedDoc: UnifiedLayeredSVGDocument
+  ): Promise<{
+    originalPositions: Array<{ x: number; y: number }>;
+    mappedPositions: Array<{ x: number; y: number }>;
+  }> {
+    const originalPositions: Array<{ x: number; y: number }> = [];
+    const mappedPositions: Array<{ x: number; y: number }> = [];
+
+    for (const spec of specifications) {
+      // Calculate position from layout specification
+      const position = this.coordinateMapper.calculatePosition(spec);
+
+      // Store original semantic position (normalized)
+      const originalPos = this.getSemanticPosition(spec);
+      originalPositions.push(originalPos);
+
+      // Store mapped pixel position
+      mappedPositions.push(position);
+    }
+
+    return { originalPositions, mappedPositions };
+  }
+
+  /**
+   * Get semantic position from layout specification
+   */
+  private getSemanticPosition(spec: LayoutSpecification): {
+    x: number;
+    y: number;
+  } {
+    const region = spec.region || "center";
+    const anchor = spec.anchor || "center";
+
+    // Get region bounds (normalized 0-1)
+    const regionBounds = this.regionManager.getRegionBounds(
+      region as RegionName
+    );
+
+    // Calculate anchor position within region
+    const anchorOffset = this.getAnchorOffset(anchor as AnchorPoint);
+
+    return {
+      x: regionBounds.x + regionBounds.width * anchorOffset.x,
+      y: regionBounds.y + regionBounds.height * anchorOffset.y,
+    };
+  }
+
+  /**
+   * Get anchor offset within region
+   */
+  private getAnchorOffset(anchor: AnchorPoint): { x: number; y: number } {
+    const anchorMap: Record<AnchorPoint, { x: number; y: number }> = {
+      center: { x: 0.5, y: 0.5 },
+      top_left: { x: 0, y: 0 },
+      top_right: { x: 1, y: 0 },
+      bottom_left: { x: 0, y: 1 },
+      bottom_right: { x: 1, y: 1 },
+      top_center: { x: 0.5, y: 0 },
+      bottom_center: { x: 0.5, y: 1 },
+      middle_left: { x: 0, y: 0.5 },
+      middle_right: { x: 1, y: 0.5 },
+    };
+
+    return anchorMap[anchor] || { x: 0.5, y: 0.5 };
+  }
+
+  /**
+   * Convert unified document to traditional SVG components
+   */
+  private async convertUnifiedToComponents(
+    unifiedDoc: UnifiedLayeredSVGDocument,
+    coordinateMapping: {
+      originalPositions: Array<{ x: number; y: number }>;
+      mappedPositions: Array<{ x: number; y: number }>;
+    }
+  ): Promise<SVGComponent[]> {
+    const components: SVGComponent[] = [];
+    let positionIndex = 0;
+
+    for (const layer of unifiedDoc.layers) {
+      for (const path of layer.paths) {
+        const component = await this.convertPathToComponent(
+          path,
+          layer,
+          coordinateMapping.mappedPositions[positionIndex] || { x: 256, y: 256 }
+        );
+
+        if (component) {
+          components.push(component);
+        }
+
+        positionIndex++;
+      }
+    }
+
+    return components;
+  }
+
+  /**
+   * Convert unified path to SVG component
+   */
+  private async convertPathToComponent(
+    path: any,
+    layer: any,
+    position: { x: number; y: number }
+  ): Promise<SVGComponent | null> {
+    // Create SVG component from path
+    const component: SVGComponent = {
+      id: path.id,
+      type: "path",
+      element: "path",
+      attributes: {
+        d: this.convertCommandsToPathData(path.commands),
+        fill: path.style.fill || "none",
+        stroke: path.style.stroke || "none",
+      },
+      metadata: {
+        motif: layer.label,
+        generated: true,
+        reused: false,
+      },
+    };
+
+    // Add optional style attributes
+    if (path.style.strokeWidth) {
+      component.attributes["stroke-width"] = path.style.strokeWidth;
+    }
+    if (path.style.opacity) {
+      component.attributes.opacity = path.style.opacity;
+    }
+    if (path.style.strokeLinecap) {
+      component.attributes["stroke-linecap"] = path.style.strokeLinecap;
+    }
+    if (path.style.strokeLinejoin) {
+      component.attributes["stroke-linejoin"] = path.style.strokeLinejoin;
+    }
+
+    return component;
+  }
+
+  /**
+   * Convert path commands to SVG path data string
+   */
+  private convertCommandsToPathData(commands: any[]): string {
+    return commands
+      .map((cmd) => {
+        if (cmd.cmd === "Z") {
+          return "Z";
+        }
+        return `${cmd.cmd} ${cmd.coords.join(" ")}`;
+      })
+      .join(" ");
+  }
+
+  /**
+   * Convert unified plan to generation request
+   */
+  private convertToGenerationRequest(
+    plan: UnifiedCompositionPlan,
+    context: SynthesisContext
+  ): any {
+    return {
+      prompt: context.prompt,
+      size: {
+        width: plan.unifiedDocument.canvas.width,
+        height: plan.unifiedDocument.canvas.height,
+      },
+      palette: this.extractPaletteFromUnified(plan.unifiedDocument),
+      seed: context.seed,
+      model: "llm",
+      userId: context.userId,
+    };
+  }
+
+  /**
+   * Convert generation response to AISVGDocument
+   */
+  private convertResponseToDocument(
+    response: any,
+    plan: UnifiedCompositionPlan,
+    context: SynthesisContext
+  ): AISVGDocument {
+    // Parse SVG to extract components (simplified)
+    const components = this.parseSVGToComponents(response.svg);
+
+    return {
+      components,
+      metadata: this.createMetadataFromUnified(plan, context),
+      bounds: {
+        width: plan.unifiedDocument.canvas.width,
+        height: plan.unifiedDocument.canvas.height,
+      },
+      palette:
+        response.meta?.palette ||
+        this.extractPaletteFromUnified(plan.unifiedDocument),
+    };
+  }
+
+  /**
+   * Parse SVG string to extract components (simplified implementation)
+   */
+  private parseSVGToComponents(svg: string): SVGComponent[] {
+    // This is a simplified implementation
+    // In practice, you'd use a proper SVG parser
+    const components: SVGComponent[] = [];
+
+    // Extract basic elements using regex (simplified)
+    const pathMatches = svg.match(/<path[^>]*>/g) || [];
+    pathMatches.forEach((match, index) => {
+      const component: SVGComponent = {
+        id: `parsed_path_${index}`,
+        type: "path",
+        element: "path",
+        attributes: this.parseAttributes(match),
+        metadata: {
+          generated: true,
+          reused: false,
+        },
+      };
+      components.push(component);
+    });
+
+    return components;
+  }
+
+  /**
+   * Parse attributes from SVG element string
+   */
+  private parseAttributes(
+    elementString: string
+  ): Record<string, string | number> {
+    const attributes: Record<string, string | number> = {};
+
+    // Simple attribute parsing (in practice, use a proper parser)
+    const attrRegex = /(\w+)="([^"]*)"/g;
+    let match;
+
+    while ((match = attrRegex.exec(elementString)) !== null) {
+      const [, name, value] = match;
+      attributes[name] = value;
+    }
+
+    return attributes;
+  }
+
+  /**
+   * Convert unified plan to traditional composition plan
+   */
+  private convertToTraditionalPlan(
+    plan: UnifiedCompositionPlan
+  ): CompositionPlan {
+    const components: any[] = [];
+    let componentIndex = 0;
+
+    // Convert unified layers and paths to traditional components
+    for (const layer of plan.unifiedDocument.layers) {
+      for (const path of layer.paths) {
+        const component = {
+          id: path.id,
+          type: "path",
+          position: { x: 256, y: 256 }, // Default center position
+          size: { width: 100, height: 100 }, // Default size
+          rotation: 0,
+          style: {
+            fill: path.style.fill,
+            stroke: path.style.stroke,
+            strokeWidth: path.style.strokeWidth,
+            opacity: path.style.opacity,
+          },
+          motif: layer.label,
+        };
+        components.push(component);
+        componentIndex++;
+      }
+    }
+
+    return {
+      components,
+      layout: {
+        bounds: {
+          width: plan.unifiedDocument.canvas.width,
+          height: plan.unifiedDocument.canvas.height,
+        },
+        viewBox: `0 0 ${plan.unifiedDocument.canvas.width} ${plan.unifiedDocument.canvas.height}`,
+        arrangement: "centered",
+        spacing: 20,
+      },
+      zIndex: components.map((_, index) => index + 1),
+    };
+  }
+
+  /**
+   * Create metadata from unified plan
+   */
+  private createMetadataFromUnified(
+    plan: UnifiedCompositionPlan,
+    context: SynthesisContext
+  ): DocumentMetadata {
+    return {
+      prompt: context.prompt,
+      seed: context.seed,
+      palette: this.extractPaletteFromUnified(plan.unifiedDocument),
+      description: `Unified SVG with ${plan.metadata.totalLayers} layers and ${plan.metadata.totalPaths} paths`,
+      generatedAt: new Date(),
+      model: context.model || "unified-synthesizer-v1",
+      usedObjects: [],
+    };
+  }
+
+  /**
+   * Extract palette from unified document
+   */
+  private extractPaletteFromUnified(
+    unifiedDoc: UnifiedLayeredSVGDocument
+  ): string[] {
+    const colors = new Set<string>();
+
+    for (const layer of unifiedDoc.layers) {
+      for (const path of layer.paths) {
+        if (path.style.fill && path.style.fill !== "none") {
+          colors.add(path.style.fill);
+        }
+        if (path.style.stroke && path.style.stroke !== "none") {
+          colors.add(path.style.stroke);
+        }
+      }
+    }
+
+    return Array.from(colors);
+  }
+
+  /**
+   * Update aspect ratio for coordinate system
+   */
+  private updateAspectRatio(aspectRatio: AspectRatio): void {
+    this.regionManager.updateAspectRatio(aspectRatio);
+    const dimensions = this.regionManager.getCanvasDimensions();
+    this.coordinateMapper.updateCanvasDimensions(
+      dimensions.width,
+      dimensions.height
+    );
   }
 }

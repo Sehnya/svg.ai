@@ -1,8 +1,87 @@
 import { JSDOM } from "jsdom";
 import type { ValidationResult } from "../types";
 import { SVG_CONSTANTS } from "../types";
+import { RegionManager } from "./RegionManager";
+import { AspectRatioManager, AspectRatio } from "./AspectRatioManager";
+import type {
+  UnifiedLayeredSVGDocument,
+  UnifiedLayer,
+  UnifiedPath,
+  PathCommand,
+  LayoutSpecification,
+  RegionName,
+  AnchorPoint,
+  CoordinateValidationResult,
+  LayoutValidationResult,
+  UnifiedValidationResult,
+  COORDINATE_BOUNDS,
+} from "../types/unified-layered";
+
+export interface ValidationFeedback {
+  type: "error" | "warning" | "suggestion";
+  category: "structure" | "coordinates" | "layout" | "style" | "performance";
+  message: string;
+  suggestion?: string;
+  autoFixable?: boolean;
+  location?: {
+    layer?: string;
+    path?: string;
+    command?: number;
+  };
+}
+
+export interface UnifiedValidationOptions {
+  enforceCoordinateBounds?: boolean;
+  validateLayoutLanguage?: boolean;
+  checkSemanticCorrectness?: boolean;
+  enableAutoFix?: boolean;
+  strictMode?: boolean;
+  maxLayers?: number;
+  maxPathsPerLayer?: number;
+  maxCommandsPerPath?: number;
+}
+
+export interface ValidationReport {
+  success: boolean;
+  errors: ValidationFeedback[];
+  warnings: ValidationFeedback[];
+  suggestions: ValidationFeedback[];
+  autoFixApplied: boolean;
+  fixedDocument?: UnifiedLayeredSVGDocument;
+  statistics: {
+    totalLayers: number;
+    totalPaths: number;
+    totalCommands: number;
+    coordinateRange: {
+      minX: number;
+      maxX: number;
+      minY: number;
+      maxY: number;
+    };
+    regionsUsed: string[];
+    anchorsUsed: string[];
+  };
+}
 
 export class SVGValidator {
+  private regionManager: RegionManager;
+  private options: Required<UnifiedValidationOptions>;
+
+  constructor(options: UnifiedValidationOptions = {}) {
+    this.options = {
+      enforceCoordinateBounds: true,
+      validateLayoutLanguage: true,
+      checkSemanticCorrectness: true,
+      enableAutoFix: true,
+      strictMode: false,
+      maxLayers: 20,
+      maxPathsPerLayer: 50,
+      maxCommandsPerPath: 100,
+      ...options,
+    };
+
+    this.regionManager = new RegionManager("1:1"); // Default, will be updated per validation
+  }
   validateSVGStructure(svgString: string): ValidationResult {
     const errors: string[] = [];
 

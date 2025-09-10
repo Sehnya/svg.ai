@@ -55,6 +55,7 @@
     "postcss": "^8.4.41",
     "tailwindcss": "^3.4.10",
     "terser": "^5.44.0",
+    "tsx": "^4.20.5",
     "typescript": "^5.5.4",
     "vite": "^5.4.3",
     "vitest": "^1.6.0",
@@ -66,6 +67,7 @@
     "@types/pg": "^8.15.5",
     "@types/ws": "^8.18.1",
     "drizzle-orm": "^0.44.5",
+    "encore.dev": "^1.49.3",
     "hono": "^4.9.6",
     "isomorphic-dompurify": "^2.26.0",
     "openai": "^5.20.0",
@@ -73,7 +75,6 @@
     "postgres": "^3.4.7",
     "vue": "^3.4.37",
     "ws": "^8.18.3",
-    "zod": "^3.23.8",
-    "encore.dev": "^1.49.3"
+    "zod": "^3.23.8"
   }
 }

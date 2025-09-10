@@ -234,7 +234,7 @@
         <div
           ref="svgWrapper"
           :class="[
-            'relative transition-transform duration-200',
+            'relative transition-transform duration-200 inline-block',
             showBorder ? 'border border-gray-200 rounded' : '',
             backgroundColor === 'transparent' ? 'bg-transparent' : '',
             backgroundColor === 'white' ? 'bg-white' : '',
@@ -344,10 +344,19 @@ const sanitizedSvgContent = computed(() => {
   if (!props.svgContent) return "";
 
   // Basic SVG sanitization - in production, use a proper sanitization library
-  const cleanSvg = props.svgContent
+  let cleanSvg = props.svgContent
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
     .replace(/on\w+="[^"]*"/gi, "")
     .replace(/javascript:/gi, "");
+
+  // Ensure SVG has proper display properties to prevent clipping
+  if (cleanSvg.includes("<svg")) {
+    // Add CSS to prevent SVG from being constrained
+    cleanSvg = cleanSvg.replace(
+      /<svg([^>]*)>/,
+      '<svg$1 style="display: block; max-width: none; max-height: none;">'
+    );
+  }
 
   return cleanSvg;
 });
@@ -362,8 +371,10 @@ const containerStyle = computed(() => ({
 }));
 
 const svgWrapperStyle = computed(() => ({
-  maxWidth: "100%",
-  maxHeight: "100%",
+  // Remove max constraints that could clip the SVG
+  // Let the SVG use its natural viewBox dimensions
+  width: "auto",
+  height: "auto",
 }));
 
 // Methods

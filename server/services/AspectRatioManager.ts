@@ -226,7 +226,8 @@ export class AspectRatioManager {
     let closestRatio: AspectRatio = "1:1";
     let minDifference = Infinity;
 
-    for (const [ratio, config] of this.configs) {
+    for (const ratio of this.configs.keys()) {
+      const config = this.configs.get(ratio)!;
       const difference = Math.abs(config.ratio - targetRatio);
       if (difference < minDifference) {
         minDifference = difference;

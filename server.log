@@ -1,0 +1,60 @@
+{
+  severity_local: "NOTICE",
+  severity: "NOTICE",
+  code: "42710",
+  message: "extension \"vector\" already exists, skipping",
+  file: "extension.c",
+  line: "1887",
+  routine: "CreateExtension",
+}
+pgvector extension enabled
+Database initialized successfully
+✅ Database connected and healthy
+✅ Preference engine initialized
+Starting cache cleanup job (interval: 30 minutes)
+✅ Cache cleanup job started
+✅ OpenAI generator initialized
+✅ Generation pipeline initialized
+✅ Knowledge base manager initialized
+✅ Preference engine initialized
+✅ OpenAI generator available
+✅ Enhanced generation API initialized
+✅ Knowledge Base API initialized
+✅ Knowledge base API initialized
+🚀 Server running on port 3001
+📚 API Documentation: http://localhost:3001/docs
+📋 OpenAPI Spec: http://localhost:3001/openapi.json
+Started development server: http://localhost:3001
+Cache cleanup completed: {
+  expiredRemoved: 0,
+  totalBefore: "0",
+  totalAfter: "0",
+  healthy: true,
+  issues: 0,
+}
+<-- POST /api/generate
+[ABTest] {
+  event: "ab_test_assignment",
+  userId: null,
+  group: "unified",
+  environment: "development",
+  timestamp: "2025-09-10T22:42:55.473Z",
+  metadata: {
+    requestedModel: "pipeline",
+    prompt: "help...",
+  },
+}
+Unified generator not available, falling back to pipeline
+[Performance] {
+  event: "generation_performance",
+  userId: undefined,
+  environment: "development",
+  timestamp: "2025-09-10T22:43:00.549Z",
+  generationMethod: "unified",
+  generationTime: 5076.654917,
+  apiTime: undefined,
+  processingTime: undefined,
+  qualityScore: undefined,
+  fallbackUsed: false,
+}
+--> POST /api/generate [32m200[0m 5s

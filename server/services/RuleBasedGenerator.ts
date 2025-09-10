@@ -4,6 +4,7 @@ import { LayerAnalyzer } from "./LayerAnalyzer";
 import { RegionManager } from "./RegionManager";
 import { CoordinateMapper } from "./CoordinateMapper";
 import { AspectRatioManager, AspectRatio } from "./AspectRatioManager";
+import { ViewportDebugger } from "../utils/viewportDebugger.js";
 import type {
   GenerationRequest,
   GenerationResponse,
@@ -64,7 +65,8 @@ export class RuleBasedGenerator extends SVGGenerator {
 
   async generate(request: GenerationRequest): Promise<GenerationResponse> {
     const validation = this.validateRequest(request);
-    if (!validation.success) {
+
+    if (!validation.isValid) {
       return {
         svg: "",
         meta: this.createEmptyMetadata(),
@@ -86,7 +88,7 @@ export class RuleBasedGenerator extends SVGGenerator {
       }
 
       // Legacy generation path
-      const seed = request.seed || this.generateSeed();
+      const seed = request.seed || Math.floor(Math.random() * 1000000);
       const { width, height } = request.size;
       const colors =
         request.palette || this.extractColorsFromPrompt(request.prompt);
@@ -338,7 +340,22 @@ export class RuleBasedGenerator extends SVGGenerator {
     const content = template.generator(width, height, colors, seed);
     const backgroundColor = this.extractBackgroundColor(prompt, colors);
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
+    // Extract path commands from the generated content for viewport analysis
+    const pathCommands = this.extractPathCommandsFromContent(content);
+
+    // Calculate optimal viewBox using viewport debugger
+    let viewBox = `0 0 ${width} ${height}`;
+    if (pathCommands.length > 0) {
+      const viewportFix = ViewportDebugger.fixViewportIssues(
+        pathCommands,
+        width,
+        height,
+        0.1 // 10% padding
+      );
+      viewBox = viewportFix.newViewBox;
+    }
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" width="${width}" height="${height}">
       ${backgroundColor ? `<rect width="100%" height="100%" fill="${backgroundColor}"/>` : ""}
       ${content}
     </svg>`;
@@ -918,6 +935,129 @@ export class RuleBasedGenerator extends SVGGenerator {
 
   private limitPrecision(value: number): number {
     return Math.round(value * 100) / 100;
+  }
+
+  /**
+   * Extract path commands from generated SVG content for viewport analysis
+   */
+  private extractPathCommandsFromContent(content: string): any[] {
+    const commands: any[] = [];
+
+    // Parse circles
+    const circleMatches = content.matchAll(
+      /<circle[^>]*cx="([^"]*)"[^>]*cy="([^"]*)"[^>]*r="([^"]*)"/g
+    );
+    for (const match of circleMatches) {
+      const cx = parseFloat(match[1]);
+      const cy = parseFloat(match[2]);
+      const r = parseFloat(match[3]);
+      if (!isNaN(cx) && !isNaN(cy) && !isNaN(r)) {
+        // Approximate circle as path commands for bounds calculation
+        commands.push(
+          { cmd: "M", coords: [cx - r, cy] },
+          { cmd: "A", coords: [r, r, 0, 0, 1, cx + r, cy] },
+          { cmd: "A", coords: [r, r, 0, 0, 1, cx - r, cy] },
+          { cmd: "Z", coords: [] }
+        );
+      }
+    }
+
+    // Parse rectangles
+    const rectMatches = content.matchAll(
+      /<rect[^>]*x="([^"]*)"[^>]*y="([^"]*)"[^>]*width="([^"]*)"[^>]*height="([^"]*)"/g
+    );
+    for (const match of rectMatches) {
+      const x = parseFloat(match[1]);
+      const y = parseFloat(match[2]);
+      const w = parseFloat(match[3]);
+      const h = parseFloat(match[4]);
+      if (!isNaN(x) && !isNaN(y) && !isNaN(w) && !isNaN(h)) {
+        commands.push(
+          { cmd: "M", coords: [x, y] },
+          { cmd: "L", coords: [x + w, y] },
+          { cmd: "L", coords: [x + w, y + h] },
+          { cmd: "L", coords: [x, y + h] },
+          { cmd: "Z", coords: [] }
+        );
+      }
+    }
+
+    // Parse polygons
+    const polygonMatches = content.matchAll(/<polygon[^>]*points="([^"]*)"/g);
+    for (const match of polygonMatches) {
+      const points = match[1].trim();
+      if (points) {
+        const coords = points
+          .split(/[\s,]+/)
+          .map(Number)
+          .filter((n) => !isNaN(n));
+        if (coords.length >= 2) {
+          commands.push({ cmd: "M", coords: [coords[0], coords[1]] });
+          for (let i = 2; i < coords.length; i += 2) {
+            if (i + 1 < coords.length) {
+              commands.push({ cmd: "L", coords: [coords[i], coords[i + 1]] });
+            }
+          }
+          commands.push({ cmd: "Z", coords: [] });
+        }
+      }
+    }
+
+    // Parse paths - use more specific regex to match d attribute
+    const pathMatches = content.matchAll(/<path[^>]*\sd="([\s\S]*?)"/g);
+    for (const match of pathMatches) {
+      const pathData = match[1].replace(/\s+/g, " ").trim();
+      const pathCommands = this.parseSimplePath(pathData);
+      commands.push(...pathCommands);
+    }
+
+    return commands;
+  }
+
+  /**
+   * Simple path parser for basic path commands
+   */
+  private parseSimplePath(pathData: string): any[] {
+    const commands: any[] = [];
+    const tokens =
+      pathData.match(/[MmLlHhVvCcSsQqTtAaZz][^MmLlHhVvCcSsQqTtAaZz]*/g) || [];
+
+    for (const token of tokens) {
+      const cmd = token[0];
+      const coords = token
+        .slice(1)
+        .trim()
+        .split(/[\s,]+/)
+        .map(Number)
+        .filter((n) => !isNaN(n));
+
+      switch (cmd.toUpperCase()) {
+        case "M":
+        case "L":
+          if (coords.length >= 2) {
+            commands.push({
+              cmd: cmd.toUpperCase(),
+              coords: [coords[0], coords[1]],
+            });
+          }
+          break;
+        case "C":
+          if (coords.length >= 6) {
+            commands.push({ cmd: "C", coords: coords.slice(0, 6) });
+          }
+          break;
+        case "Q":
+          if (coords.length >= 4) {
+            commands.push({ cmd: "Q", coords: coords.slice(0, 4) });
+          }
+          break;
+        case "Z":
+          commands.push({ cmd: "Z", coords: [] });
+          break;
+      }
+    }
+
+    return commands;
   }
 
   /**

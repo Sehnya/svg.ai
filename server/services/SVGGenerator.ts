@@ -1,47 +1,62 @@
-import type {
-  GenerationRequest,
-  GenerationResponse,
-  ValidationResult,
-} from "../types";
-import { GenerationRequestSchema } from "../types";
+/**
+ * SVGGenerator - Base class for SVG generators
+ */
+
+import { GenerationRequest, GenerationResponse } from "../types/api";
 
 export abstract class SVGGenerator {
+  /**
+   * Generate SVG from request
+   */
   abstract generate(request: GenerationRequest): Promise<GenerationResponse>;
 
-  protected validateRequest(request: GenerationRequest): ValidationResult {
-    try {
-      const result = GenerationRequestSchema.safeParse(request);
+  /**
+   * Validate generation request
+   */
+  protected validateRequest(request: GenerationRequest): {
+    isValid: boolean;
+    errors: string[];
+  } {
+    const errors: string[] = [];
 
-      if (!result.success) {
-        return {
-          success: false,
-          errors: result.error.errors.map(
-            (err) => `${err.path.join(".")}: ${err.message}`
-          ),
-        };
-      }
-
-      return {
-        success: true,
-        errors: [],
-      };
-    } catch (error) {
-      return {
-        success: false,
-        errors: [
-          `Validation error: ${error instanceof Error ? error.message : "Unknown error"}`,
-        ],
-      };
+    if (!request.prompt || request.prompt.trim().length === 0) {
+      errors.push("Prompt is required");
     }
+
+    if (request.prompt && request.prompt.length > 500) {
+      errors.push("Prompt must be 500 characters or less");
+    }
+
+    if (!request.size || !request.size.width || !request.size.height) {
+      errors.push("Size with width and height is required");
+    }
+
+    if (!request.model) {
+      errors.push("Model is required");
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+    };
   }
 
-  protected generateSeed(): number {
-    return Math.floor(Math.random() * 1000000);
-  }
-
-  protected limitPrecision(value: number, precision: number = 2): number {
-    return (
-      Math.round(value * Math.pow(10, precision)) / Math.pow(10, precision)
-    );
+  /**
+   * Create error response
+   */
+  protected createErrorResponse(error: string): GenerationResponse {
+    return {
+      success: false,
+      svg: "",
+      error,
+      metadata: {
+        generationMethod: "error",
+        fallbackUsed: false,
+        errors: [error],
+        performance: {
+          generationTime: 0,
+        },
+      },
+    };
   }
 }

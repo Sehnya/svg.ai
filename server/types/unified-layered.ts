@@ -4,7 +4,13 @@
  */
 
 import { z } from "zod";
-import { AspectRatio } from "../services/AspectRatioManager";
+// import { AspectRatio } from "../services/AspectRatioManager";
+
+// Re-export AspectRatio for external use
+// export { AspectRatio };
+
+// Temporary local definition to avoid circular dependency
+export type AspectRatio = "1:1" | "4:3" | "16:9" | "3:2" | "2:3" | "9:16";
 
 // ============================================================================
 // Core Layout Language Types
@@ -119,6 +125,64 @@ export interface UnifiedLayeredSVGDocument {
 // ============================================================================
 // Generation and Response Types
 // ============================================================================
+
+// Generation request interface for unified system
+export interface GenerationRequest {
+  prompt: string;
+  aspectRatio: AspectRatio;
+  model: "rule-based" | "llm" | "unified";
+  context?: {
+    style?: string;
+    complexity?: string;
+    colors?: string | string[];
+    theme?: string;
+    elements?: string | string[];
+  };
+  debug?: boolean;
+  features?: {
+    unifiedGeneration?: boolean;
+  };
+  environment?: "development" | "production";
+  abTestGroup?: "unified" | "traditional";
+}
+
+// Generation response interface for unified system
+export interface GenerationResponse {
+  success: boolean;
+  svg: string;
+  error?: string;
+  metadata?: {
+    generationMethod: string;
+    layers?: any[];
+    layout?: {
+      regionsUsed: string[];
+      anchorsUsed: string[];
+      aspectRatio: AspectRatio;
+      canvasDimensions: { width: number; height: number };
+    };
+    layoutQuality?: number;
+    coordinatesRepaired?: boolean;
+    fallbackUsed?: boolean;
+    fallbackReason?: string;
+    environment?: string;
+    errors?: string[];
+    performance?: {
+      generationTime: number;
+      apiTime?: number;
+      processingTime?: number;
+    };
+  };
+  debug?: {
+    overlayElements: any[];
+    statistics: {
+      regionsShown: number;
+      anchorsShown: number;
+      layersAnalyzed: number;
+      errorsFound: number;
+    };
+    renderTime: number;
+  };
+}
 
 export interface UnifiedGenerationRequest {
   prompt: string;

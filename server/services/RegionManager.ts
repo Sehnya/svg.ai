@@ -290,6 +290,23 @@ export class RegionManager {
   }
 
   /**
+   * Update canvas dimensions directly
+   */
+  updateCanvasDimensions(width: number, height: number): void {
+    this.canvasWidth = width;
+    this.canvasHeight = height;
+  }
+
+  /**
+   * Check if a region name is valid (either standard or custom)
+   */
+  isValidRegion(regionName: string): boolean {
+    return (
+      this.isStandardRegion(regionName) || this.customRegions.has(regionName)
+    );
+  }
+
+  /**
    * Get current canvas dimensions
    */
   getCanvasDimensions(): {

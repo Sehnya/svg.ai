@@ -8,8 +8,21 @@ import { KnowledgeBaseManager } from "../services/KnowledgeBaseManager.js";
 import { SVGGenerator } from "../services/SVGGenerator.js";
 import { RuleBasedGenerator } from "../services/RuleBasedGenerator.js";
 import { OpenAIGenerator } from "../services/OpenAIGenerator.js";
+// import { UnifiedSVGGenerator } from "../services/UnifiedSVGGenerator.js";
 import { ResponseCache } from "../utils/cache.js";
 import { PreferenceEngine } from "../services/PreferenceEngine.js";
+import {
+  featureFlagManager,
+  getABTestGroup,
+  isUnifiedGenerationEnabled,
+  isLayeredGenerationEnabled,
+  getFallbackChain,
+  isQualityControlEnabled,
+  getMinimumQualityThreshold,
+  logABTestAssignment,
+  logPerformanceMetrics,
+  logFeatureUsage,
+} from "../config/featureFlags.js";
 
 const app = new OpenAPIHono();
 
@@ -71,9 +84,10 @@ let knowledgeBase: KnowledgeBaseManager | null = null;
 let preferenceEngine: PreferenceEngine | null = null;
 let responseCache: ResponseCache | null = null;
 
-// Legacy generators for fallback
+// Generators for different methods
 let ruleBasedGenerator: RuleBasedGenerator | null = null;
 let openaiGenerator: OpenAIGenerator | null = null;
+// let unifiedGenerator: UnifiedSVGGenerator | null = null;
 
 // Initialize services
 export async function initializeGenerationAPI() {
@@ -104,12 +118,43 @@ export async function initializeGenerationAPI() {
       parseInt(process.env.CACHE_TTL_MINUTES || "60")
     );
 
-    // Initialize fallback generators
+    // Initialize generators
     ruleBasedGenerator = new RuleBasedGenerator();
 
     if (process.env.OPENAI_API_KEY) {
       openaiGenerator = new OpenAIGenerator();
-      console.log("✅ OpenAI generator available for fallback");
+      console.log("✅ OpenAI generator available");
+
+      // Initialize unified generator if enabled (temporarily disabled)
+      // if (isUnifiedGenerationEnabled()) {
+      //   const OpenAI = (await import("openai")).default;
+      //   const openaiClient = new OpenAI({
+      //     apiKey: process.env.OPENAI_API_KEY,
+      //   });
+
+      //   unifiedGenerator = new UnifiedSVGGenerator(
+      //     openaiClient,
+      //     undefined,
+      //     undefined,
+      //     undefined,
+      //     undefined,
+      //     undefined,
+      //     undefined,
+      //     undefined,
+      //     {
+      //       enableDebug: featureFlagManager.isDebugVisualizationEnabled(),
+      //       enableFallback: true,
+      //       maxRetries:
+      //         featureFlagManager.getFeatureConfig("unifiedGeneration")
+      //           .maxRetries,
+      //       timeout:
+      //         featureFlagManager.getFeatureConfig("unifiedGeneration").timeout,
+      //       cacheResults:
+      //         featureFlagManager.isPerformanceOptimizationEnabled("caching"),
+      //     }
+      //   );
+      //   console.log("✅ Unified SVG generator initialized");
+      // }
     }
   } catch (error) {
     console.error("❌ Failed to initialize generation API:", error);
@@ -169,11 +214,23 @@ const generateRoute = {
 };
 
 app.openapi(generateRoute, async (c) => {
+  const startTime = performance.now();
+
   try {
     const request = c.req.valid("json");
 
-    // Check cache first
-    if (responseCache) {
+    // Determine A/B test group and generation method
+    const abTestGroup = getABTestGroup(request.userId);
+    logABTestAssignment(request.userId, abTestGroup, {
+      requestedModel: request.model,
+      prompt: request.prompt.substring(0, 50) + "...", // Truncated for privacy
+    });
+
+    // Check cache first (if caching is enabled)
+    if (
+      responseCache &&
+      featureFlagManager.isPerformanceOptimizationEnabled("caching")
+    ) {
       const cachedResult = responseCache.get(request);
       if (cachedResult) {
         const result = { ...cachedResult };
@@ -181,14 +238,44 @@ app.openapi(generateRoute, async (c) => {
           ...(result.warnings || []),
           "Response served from cache",
         ];
+
+        // Log cache hit
+        logFeatureUsage("cache_hit", true, request.userId, {
+          generationMethod: result.metadata?.generationMethod || "unknown",
+        });
+
         return c.json(result, 200);
       }
     }
 
     let result;
+    let generationMethod = request.model;
 
-    // Choose generation method based on model parameter
-    switch (request.model) {
+    // Override generation method based on A/B test group
+    if (request.model === "pipeline" || request.model === "llm") {
+      switch (abTestGroup) {
+        case "unified":
+          if (isUnifiedGenerationEnabled(request.userId)) {
+            generationMethod = "unified";
+          } else {
+            generationMethod = "pipeline";
+          }
+          break;
+        case "traditional":
+          generationMethod = "pipeline";
+          break;
+        case "control":
+          generationMethod = "rule-based";
+          break;
+      }
+    }
+
+    // Choose generation method
+    switch (generationMethod) {
+      case "unified":
+        result = await generateWithUnified(request);
+        break;
+
       case "pipeline":
         result = await generateWithPipeline(request);
         break;
@@ -238,13 +325,44 @@ app.openapi(generateRoute, async (c) => {
       );
     }
 
-    // Cache successful results
-    if (responseCache && (!result.errors || result.errors.length === 0)) {
+    // Check quality threshold if quality control is enabled
+    if (isQualityControlEnabled() && result.metadata?.layoutQuality) {
+      const minThreshold = getMinimumQualityThreshold();
+      if (result.metadata.layoutQuality < minThreshold) {
+        result.warnings = [
+          ...(result.warnings || []),
+          `Quality score ${result.metadata.layoutQuality} below threshold ${minThreshold}`,
+        ];
+      }
+    }
+
+    // Cache successful results (if caching is enabled)
+    if (
+      responseCache &&
+      featureFlagManager.isPerformanceOptimizationEnabled("caching") &&
+      (!result.errors || result.errors.length === 0)
+    ) {
       responseCache.set(request, result);
     }
 
-    // Add event ID to response for feedback tracking
-    const response = eventId ? { ...result, eventId } : result;
+    // Log performance metrics
+    const endTime = performance.now();
+    logPerformanceMetrics({
+      generationMethod: result.metadata?.generationMethod || generationMethod,
+      generationTime: endTime - startTime,
+      apiTime: result.metadata?.performance?.apiTime,
+      processingTime: result.metadata?.performance?.processingTime,
+      qualityScore: result.metadata?.layoutQuality,
+      fallbackUsed: result.metadata?.fallbackUsed || false,
+      userId: request.userId,
+    });
+
+    // Add event ID and A/B test info to response
+    const response = {
+      ...(eventId ? { ...result, eventId } : result),
+      abTestGroup,
+      generationMethod,
+    };
 
     return c.json(response, 200);
   } catch (error) {
@@ -258,6 +376,90 @@ app.openapi(generateRoute, async (c) => {
     );
   }
 });
+
+async function generateWithUnified(request: any) {
+  // Unified generator is temporarily disabled
+  console.warn("Unified generator not available, falling back to pipeline");
+  return generateWithPipeline(request);
+
+  // Unified generator functionality is temporarily disabled
+  // Falling back to pipeline generation
+  return generateWithPipeline(request);
+
+  /*
+  try {
+    // Convert request format for unified generator
+    const unifiedRequest = {
+      ...request,
+      features: {
+        unifiedGeneration: true,
+        layoutLanguage:
+          featureFlagManager.getFeatureConfig("layeredGeneration")
+            .enableLayoutLanguage,
+        semanticRegions:
+          featureFlagManager.getFeatureConfig("layeredGeneration")
+            .enableSemanticRegions,
+      },
+      debug: featureFlagManager.isDebugVisualizationEnabled(),
+      environment: featureFlagManager.getEnvironment(),
+    };
+
+    const result = await unifiedGenerator.generate(unifiedRequest);
+
+    // Log feature usage
+    logFeatureUsage("unified_generation", true, request.userId, {
+      success: result.success,
+      fallbackUsed: result.metadata?.fallbackUsed,
+      layoutQuality: result.metadata?.layoutQuality,
+    });
+
+    return result;
+  } catch (error) {
+    console.error("Unified generation failed:", error);
+
+    // Log failure
+    logFeatureUsage("unified_generation", false, request.userId, {
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    // Fallback based on configured fallback chain
+    const fallbackChain = getFallbackChain();
+
+    for (const fallbackMethod of fallbackChain) {
+      try {
+        switch (fallbackMethod) {
+          case "layered":
+            if (isLayeredGenerationEnabled()) {
+              return await generateWithPipeline(request);
+            }
+            break;
+          case "rule-based":
+            return await generateWithRuleBased(request);
+          case "basic":
+            // Return basic geometric shape
+            return {
+              success: true,
+              svg: generateBasicFallbackSVG(request),
+              metadata: {
+                generationMethod: "basic-fallback",
+                fallbackUsed: true,
+                fallbackReason: `Unified generation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+              },
+            };
+        }
+      } catch (fallbackError) {
+        console.warn(
+          `Fallback method ${fallbackMethod} also failed:`,
+          fallbackError
+        );
+        continue;
+      }
+    }
+
+    throw error;
+  }
+  */
+}
 
 async function generateWithPipeline(request: any) {
   if (!pipeline) {
@@ -357,6 +559,25 @@ async function generateWithRuleBased(request: any) {
     console.error("Rule-based generation failed:", error);
     throw error;
   }
+}
+
+function generateBasicFallbackSVG(request: any): string {
+  const width = request.size?.width || 400;
+  const height = request.size?.height || 400;
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const radius = Math.min(width, height) / 4;
+
+  // Use first color from palette or default blue
+  const color = request.palette?.[0] || "#3B82F6";
+  const strokeColor = request.palette?.[1] || "#1E40AF";
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
+  <circle cx="${centerX}" cy="${centerY}" r="${radius}" fill="${color}" stroke="${strokeColor}" stroke-width="2"/>
+  <text x="${centerX}" y="${centerY + 5}" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="white">
+    Generated
+  </text>
+</svg>`;
 }
 
 // Export the app

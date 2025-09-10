@@ -4,7 +4,7 @@ import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { timeout } from "hono/timeout";
 import { swaggerUI } from "@hono/swagger-ui";
-import { healthCheckRoute, generateSVGRoute } from "./schemas/openapi";
+// import { healthCheckRoute, generateSVGRoute } from "./schemas/openapi";
 import { SVGGenerator } from "./services/SVGGenerator";
 import { RuleBasedGenerator } from "./services/RuleBasedGenerator";
 import { OpenAIGenerator } from "./services/OpenAIGenerator";
@@ -50,6 +50,11 @@ app.use(
   "*",
   cors({
     origin: (origin) => {
+      // In development, allow all origins for easier testing
+      if (process.env.NODE_ENV !== "production") {
+        return origin || "*";
+      }
+
       // Allow requests from development servers and production domains
       const allowedOrigins = [
         "http://localhost:5173",
@@ -234,7 +239,7 @@ try {
 }
 
 // Health check endpoint
-app.openapi(healthCheckRoute, async (c) => {
+app.get("/health", async (c) => {
   const dbHealth = await checkDatabaseHealth();
 
   return c.json({
@@ -319,9 +324,25 @@ app.route("/api/kb", kbAPI);
 app.route("/api", generateAPI);
 
 // SVG generation endpoint
-app.openapi(generateSVGRoute, async (c) => {
+app.post("/generate", async (c) => {
   try {
-    const request = c.req.valid("json");
+    const request = await c.req.json();
+
+    // Validate required fields
+    if (!request.prompt || typeof request.prompt !== "string") {
+      return c.json(
+        {
+          error: "Invalid request",
+          details: ["Prompt is required and must be a string"],
+        },
+        400
+      );
+    }
+
+    // Ensure size is provided (required by API types)
+    if (!request.size) {
+      request.size = { width: 400, height: 400 };
+    }
 
     // Check cache first
     const cachedResult = responseCache.get(request);
@@ -395,11 +416,21 @@ app.openapi(generateSVGRoute, async (c) => {
 
     return c.json(response, 200);
   } catch (error) {
-    console.error("Generation error:", error);
+    console.error("❌ Generation error details:", {
+      message: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined,
+      error: error,
+    });
     return c.json(
       {
         error: "Internal server error",
         details: [error instanceof Error ? error.message : "Unknown error"],
+        stack:
+          process.env.NODE_ENV === "development"
+            ? error instanceof Error
+              ? error.stack
+              : undefined
+            : undefined,
       },
       500
     );
@@ -427,43 +458,43 @@ if (process.env.NODE_ENV !== "production") {
   });
 }
 
-// OpenAPI documentation
-app.doc("/openapi.json", {
-  openapi: "3.0.0",
-  info: {
-    version: "1.0.0",
-    title: "SVG AI Code Generator API",
-    description:
-      "API for generating SVG images from natural language prompts using AI and rule-based methods.",
-    contact: {
-      name: "API Support",
-      email: "support@example.com",
-    },
-    license: {
-      name: "MIT",
-      url: "https://opensource.org/licenses/MIT",
-    },
-  },
-  servers: [
-    {
-      url: "http://localhost:3001",
-      description: "Development server",
-    },
-  ],
-  tags: [
-    {
-      name: "SVG Generation",
-      description: "Endpoints for generating SVG images",
-    },
-    {
-      name: "Health",
-      description: "Health check endpoints",
-    },
-  ],
-});
+// OpenAPI documentation (temporarily disabled)
+// app.doc("/openapi.json", {
+//   openapi: "3.0.0",
+//   info: {
+//     version: "1.0.0",
+//     title: "SVG AI Code Generator API",
+//     description:
+//       "API for generating SVG images from natural language prompts using AI and rule-based methods.",
+//     contact: {
+//       name: "API Support",
+//       email: "support@example.com",
+//     },
+//     license: {
+//       name: "MIT",
+//       url: "https://opensource.org/licenses/MIT",
+//     },
+//   },
+//   servers: [
+//     {
+//       url: "http://localhost:3001",
+//       description: "Development server",
+//     },
+//   ],
+//   tags: [
+//     {
+//       name: "SVG Generation",
+//       description: "Endpoints for generating SVG images",
+//     },
+//     {
+//       name: "Health",
+//       description: "Health check endpoints",
+//     },
+//   ],
+// });
 
-// Swagger UI
-app.get("/docs", swaggerUI({ url: "/openapi.json" }));
+// Swagger UI (temporarily disabled)
+// app.get("/docs", swaggerUI({ url: "/openapi.json" }));
 
 const port = process.env.PORT || 3001;
 

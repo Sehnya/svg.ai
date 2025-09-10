@@ -1,7 +1,7 @@
 // Main types export file for server
 export * from "./api";
 export * from "./pipeline";
-export * from "./unified-layered";
+// Note: unified-layered types are imported directly where needed to avoid conflicts
 
 // Constants for SVG validation
 export const SVG_CONSTANTS = {

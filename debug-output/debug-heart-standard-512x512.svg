@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Original content -->
+  <path d="M 256 286 C 256 241 196 196 196 241 C 196 271 226 286 256 316 C 286 286 316 271 316 241 C 316 196 256 241 256 286 Z" fill="red" stroke="darkred" stroke-width="2" opacity="0.7"/>
+  <!-- Bounding box visualization -->
+  <rect x="196" y="196" width="120" height="120" fill="none" stroke="blue" stroke-width="1" stroke-dasharray="5,5"/>
+  <!-- ViewBox visualization -->
+  <rect x="0" y="0" width="512" height="512" fill="none" stroke="green" stroke-width="2" stroke-dasharray="10,5"/>
+  <!-- Center markers -->
+  <circle cx="256" cy="256" r="3" fill="blue"/>
+  <circle cx="256" cy="256" r="3" fill="green"/>
+</svg>
